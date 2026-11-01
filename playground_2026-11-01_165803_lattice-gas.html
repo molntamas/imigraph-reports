@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>imigraph playground: Reflect + Stream</title>
+<style>
+:root {
+  --text: #111827;
+  --muted: #6b7280;
+  --border: #e5e7eb;
+  --bg: #f9fafb;
+  --card: #ffffff;
+  --pass: #15803d;
+  --fail: #b91c1c;
+  --reference: #2563eb;
+  --candidate: #dc2626;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 24px 16px 48px;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+main { max-width: 1120px; margin: 0 auto; }
+h1 { font-size: 26px; margin: 0 0 4px; }
+h2 { font-size: 20px; margin: 32px 0 8px; }
+h3 { font-size: 16px; margin: 16px 0 6px; }
+p { margin: 6px 0 10px; max-width: 80ch; }
+code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.92em; }
+.muted { color: var(--muted); }
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px 18px;
+  margin: 12px 0;
+}
+.row { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
+.row > * { flex: 1 1 320px; min-width: 0; }
+.badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-weight: 600;
+  color: white;
+}
+.badge.pass { background: var(--pass); }
+.badge.fail { background: var(--fail); }
+canvas { width: 100%; height: auto; border: 1px solid var(--border); border-radius: 6px; background: white; }
+.controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 8px 0; }
+.controls label { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.controls label input[type="range"] { width: 90px; flex: none; }
+.controls input[type="range"] { flex: 1; }
+.controls button { padding: 4px 14px; border: 1px solid var(--border); border-radius: 6px; background: white; cursor: pointer; }
+.controls .label { min-width: 9ch; font-variant-numeric: tabular-nums; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+th { color: var(--muted); font-weight: 600; }
+td.pass { color: var(--pass); font-weight: 600; }
+td.fail { color: var(--fail); font-weight: 600; }
+svg.chart { max-width: 100%; height: auto; }
+svg.heatmap { width: 220px; height: 220px; }
+.heatmap-block { flex: 0 0 auto; }
+.legend-ref { color: var(--reference); font-weight: 600; }
+.legend-cand { color: var(--candidate); font-weight: 600; }
+
+/* Phones: tables scroll sideways instead of breaking the layout, cards and type get tighter,
+   charts and canvases already scale to the column width. */
+.table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+@media (max-width: 640px) {
+  body { padding: 12px 10px 32px; font-size: 14px; }
+  h1 { font-size: 20px; }
+  h2 { font-size: 17px; margin-top: 22px; }
+  .card { padding: 10px 10px; border-radius: 8px; }
+  .row { gap: 10px; }
+  .row > * { flex-basis: 100%; }
+  table { font-size: 12px; }
+  th, td { padding: 4px 5px; }
+  .controls { gap: 6px; }
+  .controls .label { min-width: 7ch; font-size: 13px; }
+  svg.heatmap { width: 150px; height: 150px; }
+  pre { font-size: 11px; overflow-x: auto; }
+}
+svg.pattern { width: 326px; height: auto; vertical-align: middle; }
+td.pattern { min-width: 336px; }
+
+table.kv th { width: 55%; }
+#docs table.kv th { width: auto; }
+#docs table.kv { margin-bottom: 12px; }
+span.description { font-weight: normal; font-size: 12px; }
+pre.request { white-space: pre-wrap; font-size: 12px; background: var(--bg); padding: 8px; border-radius: 6px; }
+</style>
+</head>
+<body>
+<main>
+<h1>imigraph playground: Reflect + Stream</h1>
+<p class="muted">Generated 2026-11-01 16:58 UTC with the rule editor of the imigraph GUI (or <code>python -m imigraph
+playground-report</code>). A small world, a starting universe and a set of 2 rule(s) applied in order in every
+step; the page keeps every state and every matched chain of the run, and compares what was measured with what the
+rules predict.</p>
+
+<h2>1. The rules</h2>
+<div class="card">
+<p>Each rule is an edge rewrite in the notation <code>{w,s}, {s,t} &rarr; {w,t}, {s,t}</code>: a walker edge plus a chain
+of site edges on the left, the walker re-attached to a site of the chain on the right. The pattern drawings show the
+variables as nodes (sites grey, walkers red) and the edges of each side. Direction weights (+x, &minus;x, +y, &minus;y)
+and the self-loop policy of every rule are in the <em>choice</em> and <em>matches</em> columns. The built-in rules of
+hyperedge walkers (Stream, Reflect) and the Collide rule of the <em>hpp</em> collisions are listed the same way.
+Walker model of this run: <strong>hyperedge</strong>, collisions: <strong>hpp</strong>.</p>
+<div class="table-scroll"><table><thead><tr><th>rule</th><th>rewrite</th><th>matches</th><th>choice</th><th>invariants</th><th>physics</th><th>pattern</th></tr></thead><tbody><tr><th>Collide<br><span class="muted description">collisions: hpp (runs before the rules in every step)</span></th><td><code>{w1,s,a}, {w2,s,b}, {s,c}, {s,d} -&gt; {w1,s,c}, {w2,s,d}, {s,c}, {s,d}</code></td><td>a head-on pair at s (b opposite to a) whose perpendicular channels c, d are empty and real edges</td><td>which walker takes c is chosen uniformly; all pairs rewritten at once</td><td>walkers, momentum (a + b = 0 = c + d), energy (speed c = a / tau), exclusion (one walker per channel)</td><td>the HPP collision: the only interaction of the lattice gas</td><td class="pattern"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 326 80" width="326" height="80" class="pattern" role="img">
+<rect width="326" height="80" fill="white" rx="6"/>
+<line x1="75.0" y1="20.8" x2="89.0" y2="20.8" stroke="#f87171" stroke-width="2"/>
+<line x1="89.0" y1="20.8" x2="103.0" y2="20.8" stroke="#f87171" stroke-width="2"/>
+<line x1="89.0" y1="20.8" x2="89.0" y2="20.8" stroke="#f87171" stroke-width="2"/>
+<line x1="89.0" y1="20.8" x2="103.0" y2="20.8" stroke="#f87171" stroke-width="2"/>
+<line x1="89.0" y1="20.8" x2="117.0" y2="20.8" stroke="#f87171" stroke-width="2"/>
+<line x1="89.0" y1="20.8" x2="131.0" y2="20.8" stroke="#f87171" stroke-width="2"/>
+<circle cx="75.0" cy="20.8" r="7" fill="#dc2626"/><text x="75.0" y="24.3" font-size="9" fill="white" text-anchor="middle" font-family="ui-monospace, monospace">w1</text>
+<circle cx="89.0" cy="20.8" r="7" fill="#dc2626"/><text x="89.0" y="24.3" font-size="9" fill="white" text-anchor="middle" font-family="ui-monospace, monospace">s</text>
+<circle cx="103.0" cy="20.8" r="7" fill="#dc2626"/><text x="103.0" y="24.3" font-size="9" fill="white" text-anchor="middle" font-family="ui-monospace, monospace">a</text>
+<circle cx="89.0" cy="20.8" r="7" fill="#dc2626"/><text x="89.0" y="24.3" font-size="9" fill="white" text-anchor="middle" font-family="ui-monospace, monospace">w2</text>
+<circle cx="103.0" cy="20.8" r="7" fill="#dc2626"/><text x="103.0" y="24.3" font-size="9" fill="white" text-anchor="middle" font-family="ui-monospace, monospace">b</text>
+<circle cx="117.0" cy="20.8" r="7" fill="#dc2626"/><text x="117.0" y="24.3" font-size="9" fill="white" text-anchor="middle" font-family="ui-monospace, monospace">c</text>
+<circle cx="131.0" cy="20.8" r="7" fill="#dc2626"/><text x="131.0" y="24.3" font-size="9" fill="white" text-anchor="middle" font-family="ui-monospace, monospace">d</text>
+<line x1="251.0" y1="20.8" x2="265.0" y2="20.8" stroke="#f87171" stroke-width="2"/>
+<line x1="265.0" y1="20.8" x2="293.0" y2="20.8" stroke="#f87171" stroke-width="2"/>
+<line x1="265.0" y1="20.8" x2="265.0" y2="20.8" stroke="#f87171" stroke-width="2"/>
+<line x1="265.0" y1="20.8" x2="307.0" y2="20.8" stroke="#f87171" stroke-width="2"/>
+<line x1="265.0" y1="20.8" x2="293.0" y2="20.8" stroke="#f87171" stroke-width="2"/>
+<line x1="265.0" y1="20.8" x2="307.0" y2="20.8" stroke="#f87171" stroke-width="2"/>
+<circle cx="251.0" cy="20.8" r="7" fill="#dc2626"/><text x="251.0" y="24.3" font-size="9" fill="white" text-anchor="middle" font-family="ui-monospace, monospace">w1</text>
+<circle cx="265.0" cy="20.8" r="7" fill="#dc2626"/><text x="265.0" y="24.3" font-size="9" fill="white" text-anchor="middle" font-family="ui-monospace, monospace">s</text>
+<circle cx="265.0" cy="20.8" r="7" fill="#dc2626"/><text x="265.0" y="24.3" font-size="9" fill="white" text-anchor="middle" font-family="ui-monospace, monospace">w2</text>
+<circle cx="293.0" cy="20.8" r="7" fill="#dc2626"/><text x="293.0" y="24.3" font-size="9" fill="white" text-anchor="middle" font-family="ui-monospace, monospace">c</text>
+<circle cx="307.0" cy="20.8" r="7" fill="#dc2626"/><text x="307.0" y="24.3" font-size="9" fill="white" text-anchor="middle" font-family="ui-monospace, monospace">d</text>
+<path d="M 155.0 40.0 h 14 m -4 -4 l 4 4 l -4 4" fill="none" stroke="#374151" stroke-width="1.5"/>
+</svg></td></tr><tr><th>Reflect<br><span class="muted description">a walker heading into a wall turns round</span></th><td><code>{w,s,s} -&gt; {w,s,s&#x27;}  (s&#x27; the neighbour opposite to the self-loop)</code></td><td>a walker heading into a self-loop, i.e. into the wall</td><td>deterministic</td><td>walkers, energy; momentum is exchanged with the wall</td><td>specular wall; never matches on a periodic lattice; no drift or diffusion prediction (hyperedge walkers only)</td><td class="pattern"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 326 80" width="326" height="80" class="pattern" role="img">
+<rect width="326" height="80" fill="white" rx="6"/>
+<line x1="75.0" y1="20.8" x2="89.0" y2="20.8" stroke="#f87171" stroke-width="2"/>
+<line x1="89.0" y1="20.8" x2="89.0" y2="20.8" stroke="#f87171" stroke-width="2"/>
+<circle cx="89.0" cy="9.8" r="7" fill="none" stroke="#f87171" stroke-width="1.5"/>
+<circle cx="75.0" cy="20.8" r="7" fill="#dc2626"/><text x="75.0" y="24.3" font-size="9" fill="white" text-anchor="middle" font-family="ui-monospace, monospace">w</text>
+<circle cx="89.0" cy="20.8" r="7" fill="#dc2626"/><text x="89.0" y="24.3" font-size="9" fill="white" text-anchor="middle" font-family="ui-monospace, monospace">s</text>
+<circle cx="89.0" cy="20.8" r="7" fill="#dc2626"/><text x="89.0" y="24.3" font-size="9" fill="white" text-anchor="middle" font-family="ui-monospace, monospace">t</text>
+<line x1="251.0" y1="20.8" x2="265.0" y2="20.8" stroke="#f87171" stroke-width="2"/>
+<line x1="265.0" y1="20.8" x2="265.0" y2="20.8" stroke="#f87171" stroke-width="2"/>
+<circle cx="265.0" cy="9.8" r="7" fill="none" stroke="#f87171" stroke-width="1.5"/>
+<circle cx="251.0" cy="20.8" r="7" fill="#dc2626"/><text x="251.0" y="24.3" font-size="9" fill="white" text-anchor="middle" font-family="ui-monospace, monospace">w</text>
+<circle cx="265.0" cy="20.8" r="7" fill="#dc2626"/><text x="265.0" y="24.3" font-size="9" fill="white" text-anchor="middle" font-family="ui-monospace, monospace">s</text>
+<circle cx="265.0" cy="20.8" r="7" fill="#dc2626"/><text x="265.0" y="24.3" font-size="9" fill="white" text-anchor="middle" font-family="ui-monospace, monospace">t</text>
+<path d="M 155.0 40.0 h 14 m -4 -4 l 4 4 l -4 4" fill="none" stroke="#374151" stroke-width="1.5"/>
+</svg></td></tr><tr><th>Stream<br><span class="muted description">free flight: one edge per step along the heading</span></th><td><code>{w,s,s&#x27;}_k, {s&#x27;,s&#x27;&#x27;}_k -&gt; {w,s&#x27;,s&#x27;&#x27;}_k</code></td><td>every walker, with the edge of the same direction label k at its target</td><td>deterministic</td><td>walkers, momentum, energy, exclusion</td><td>free flight by one lattice spacing per step: speed c = a / tau; no drift or diffusion prediction (hyperedge walkers only)</td><td class="pattern"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 326 80" width="326" height="80" class="pattern" role="img">
+<rect width="326" height="80" fill="white" rx="6"/>
+<line x1="75.0" y1="20.8" x2="89.0" y2="20.8" stroke="#f87171" stroke-width="2"/>
+<line x1="89.0" y1="20.8" x2="103.0" y2="20.8" stroke="#f87171" stroke-width="2"/>
+<circle cx="103.0" cy="9.8" r="7" fill="none" stroke="#f87171" stroke-width="1.5"/>
+<circle cx="75.0" cy="20.8" r="7" fill="#dc2626"/><text x="75.0" y="24.3" font-size="9" fill="white" text-anchor="middle" font-family="ui-monospace, monospace">w</text>
+<circle cx="89.0" cy="20.8" r="7" fill="#dc2626"/><text x="89.0" y="24.3" font-size="9" fill="white" text-anchor="middle" font-family="ui-monospace, monospace">s</text>
+<circle cx="103.0" cy="20.8" r="7" fill="#dc2626"/><text x="103.0" y="24.3" font-size="9" fill="white" text-anchor="middle" font-family="ui-monospace, monospace">t</text>
+<circle cx="103.0" cy="20.8" r="7" fill="#dc2626"/><text x="103.0" y="24.3" font-size="9" fill="white" text-anchor="middle" font-family="ui-monospace, monospace">u</text>
+<line x1="251.0" y1="20.8" x2="279.0" y2="20.8" stroke="#f87171" stroke-width="2"/>
+<line x1="279.0" y1="20.8" x2="279.0" y2="20.8" stroke="#f87171" stroke-width="2"/>
+<circle cx="279.0" cy="9.8" r="7" fill="none" stroke="#f87171" stroke-width="1.5"/>
+<circle cx="251.0" cy="20.8" r="7" fill="#dc2626"/><text x="251.0" y="24.3" font-size="9" fill="white" text-anchor="middle" font-family="ui-monospace, monospace">w</text>
+<circle cx="279.0" cy="20.8" r="7" fill="#dc2626"/><text x="279.0" y="24.3" font-size="9" fill="white" text-anchor="middle" font-family="ui-monospace, monospace">t</text>
+<circle cx="279.0" cy="20.8" r="7" fill="#dc2626"/><text x="279.0" y="24.3" font-size="9" fill="white" text-anchor="middle" font-family="ui-monospace, monospace">u</text>
+<path d="M 155.0 40.0 h 14 m -4 -4 l 4 4 l -4 4" fill="none" stroke="#374151" stroke-width="1.5"/>
+</svg></td></tr><tr><th>Reflect + Stream<br><span class="muted description">hyperedge walkers {w,s,s&#x27;}: a position and a heading; one walker per channel (s, k), a blocked hop keeps the walker where it is; HPP collision: a head-on pair on one site leaves along the perpendicular channels, momentum and energy conserved; runs first in every step</span></th><td><code>{w,s,s} -&gt; {w,s,s&#x27;}  (s&#x27; the neighbour opposite to the self-loop) ; {w,s,s&#x27;}_k, {s&#x27;,s&#x27;&#x27;}_k -&gt; {w,s&#x27;,s&#x27;&#x27;}_k</code></td><td>2 rule(s) applied in order in every step; each one matches on the state the previous one produced</td><td>each rule draws its directions independently; all walkers rewritten at once by every rule</td><td>number of walkers, one anchoring edge per walker, the space graph; the exclusion principle</td><td>0 hops per step in total; no chain rule, so no drift or diffusion prediction: D = (0, 0), drift v = (0, 0) for a = 1, tau = 1. Hyperedge walkers: a hop into a taken channel is blocked, which lowers the measured values at high density.</td><td class="pattern"></td></tr></tbody></table></div>
+<div id="docs"><h3>Walker models and collisions</h3>
+<p>What happens when two walkers meet depends on what a walker <em>is</em>. The playground offers two walker models
+and two collision behaviours; they are part of the rule configuration, next to the rules themselves.</p>
+<table class="kv">
+<thead><tr><th>walker model</th><th>a walker is</th><th>when two walkers want the same place</th></tr></thead>
+<tbody>
+<tr><th>edge</th><td>the edge <code>{w,s}</code>: a position, nothing else</td>
+<td>nothing happens. Any number of walkers may share a site and they pass through each other; the chain rules move
+every walker independently. This is the model of the Brownian imitation: point particles that do not interact.</td></tr>
+<tr><th>hyperedge</th><td>the hyperedge <code>{w,s,s'}</code>: a position <em>and</em> a heading, the direction label
+<code>k</code> (+x, &minus;x, +y, &minus;y) of the edge from <code>s</code> to <code>s'</code></td>
+<td>the <em>exclusion principle</em>: at most one walker per channel <code>(s, k)</code>, so at most four walkers per
+site and never two with the same heading. A rule that would put two walkers into one channel is <em>blocked</em> for
+the loser: it keeps its channel (ties are drawn at random, a channel that is taken in the current state is never
+entered). The HPP lattice gas never blocks; blocked hops are counted in the measured values.</td></tr>
+</tbody>
+</table>
+<table class="kv">
+<thead><tr><th>collisions</th><th>what it does</th><th>conserves</th></tr></thead>
+<tbody>
+<tr><th>none</th><td>no interaction rule. Edge walkers ignore each other; hyperedge walkers only feel the exclusion.</td>
+<td>the number of walkers</td></tr>
+<tr><th>hpp</th><td>the Collide rule of the HPP lattice gas (Hardy, Pomeau, de Pazzis 1973) runs first in every step:
+<code>{w1,s,a}, {w2,s,b}, {s,c}, {s,d} &rarr; {w1,s,c}, {w2,s,d}, {s,c}, {s,d}</code>. Two walkers on one site heading in
+opposite directions <code>a, b</code> leave along the perpendicular pair <code>c, d</code>, provided those channels are
+empty and are real edges (not wall self-loops); which walker takes <code>c</code> is drawn at random. Needs hyperedge
+walkers, because a collision needs a direction to change. The collision sites are ringed in the step-by-step animation.</td>
+<td>walkers, momentum (<code>a + b = 0 = c + d</code>), energy (every walker keeps the speed <code>a / &tau;</code>),
+the exclusion</td></tr>
+</tbody>
+</table>
+<p>Rules on hyperedge walkers: a <em>chain rule</em> moves the walker along its chain as it does for edge walkers, and
+the label of the last hop becomes the new heading (a walker that stays keeps its heading). The built-in rules
+<em>Stream</em> (move one edge along the heading, keep the label) and <em>Reflect</em> (a walker heading into a wall
+self-loop turns round, the wall takes the momentum) only exist for hyperedge walkers; ticking Stream and Reflect with
+<em>hpp</em> collisions is the HPP lattice gas of the gas report. The drift and diffusion prediction counts the chain
+rules only, and holds at low density; blocked hops lower the measured values when the world is crowded.</p>
+</div>
+</div>
+
+<h2>2. The starting universe</h2>
+<div class="card">
+<div class="row">
+<div><table class="kv"><tbody><tr><th>world</th><td>9 x 9 square lattice</td></tr><tr><th>walls</th><td>reflecting</td></tr><tr><th>walker model</th><td>hyperedge</td></tr><tr><th>collisions</th><td>hpp</td></tr><tr><th>initial heading</th><td>random</td></tr><tr><th>walkers</th><td>24</td></tr><tr><th>placement</th><td>left</td></tr><tr><th>starting sites (node indices)</th><td>30, 3, 5, 5, 1, 33, 33, 26, 7, 2, 11, 14 ...</td></tr><tr><th>steps</th><td>60</td></tr><tr><th>seed</th><td>3</td></tr><tr><th>spacing a / step time tau</th><td>1 / 1</td></tr></tbody></table></div>
+<div>
+<p class="muted">The world at step 0: space nodes (grey) with their edges, walkers (red) attached to their starting sites
+(hyperedge walkers as arrows along their heading).</p>
+<canvas id="universe-canvas" width="400" height="400"></canvas>
+</div>
+</div>
+</div>
+
+<h2>3. The run</h2>
+<div class="card">
+<div class="row">
+<div>
+<p class="muted">The rule set, one application in four phases (state, match, choose, rewrite) for walker 0.</p>
+<canvas id="rule-canvas" width="520" height="520"></canvas>
+<div class="controls"><button id="rule-play">Play</button><input id="rule-slider" type="range"><span id="rule-label" class="label"></span></div>
+<p id="rule-phase" class="muted"></p>
+</div>
+<div>
+<p class="muted">The graph, step by step: all walkers on the small world (arrows: headings; rings: collision sites of the step).</p>
+<canvas id="demo-canvas" width="520" height="520"></canvas>
+<div class="controls"><button id="demo-play">Play</button><input id="demo-slider" type="range"><span id="demo-label" class="label"></span></div>
+<label class="muted">playback speed <input id="speed" type="range" min="0.25" max="4" step="0.25" value="1"><span id="speed-label"></span></label>
+</div>
+</div>
+</div>
+
+<h2>4. Measured against the prediction</h2>
+<div class="card">
+<table class="kv"><tbody><tr><th>walker model / collisions</th><td>hyperedge / hpp</td></tr><tr><th>mean |dr|^2 per step (a^2)</th><td>1.000</td></tr><tr><th>diffusion D measured / predicted (x, y)</th><td>0.056 / 0.000, 0.000</td></tr><tr><th>drift v measured / predicted</th><td>(0.033, -0.006) / (0.000, 0.000)</td></tr><tr><th>hops per step (predicted)</th><td>0</td></tr><tr><th>wall rate (fraction of walkers per step)</th><td>1.000</td></tr><tr><th>occupied sites at the end</th><td>23</td></tr><tr><th>blocked hops (fraction of walkers per step, exclusion)</th><td>0.000</td></tr><tr><th>collisions in the run (collisions: hpp)</th><td>20</td></tr></tbody></table>
+<p class="muted">Few walkers and walls make the measured values noisy; the prediction holds far from the walls, for many
+walkers and many steps. A rule with a drift or more hops per step is meant to differ from the uniform random hop.</p>
+</div>
+
+<h2>5. Reproduce</h2>
+<div class="card">
+<p class="muted">The session as the GUI exports it. Save it as <code>session.json</code> and run
+<code>python -m imigraph playground-report --request-file session.json --label &lt;name&gt;</code>, or import it in the GUI.</p>
+<pre class="request">{
+  &quot;rule&quot;: [
+    {
+      &quot;name&quot;: &quot;Reflect&quot;,
+      &quot;builtin&quot;: &quot;reflect&quot;,
+      &quot;description&quot;: &quot;a walker heading into a wall turns round&quot;
+    },
+    {
+      &quot;name&quot;: &quot;Stream&quot;,
+      &quot;builtin&quot;: &quot;stream&quot;,
+      &quot;description&quot;: &quot;free flight: one edge per step along the heading&quot;
+    }
+  ],
+  &quot;walker_model&quot;: &quot;hyperedge&quot;,
+  &quot;collisions&quot;: &quot;hpp&quot;,
+  &quot;heading&quot;: &quot;random&quot;,
+  &quot;size&quot;: 9,
+  &quot;walls&quot;: &quot;reflecting&quot;,
+  &quot;walkers&quot;: 24,
+  &quot;placement&quot;: &quot;left&quot;,
+  &quot;steps&quot;: 60,
+  &quot;seed&quot;: 3
+}</pre>
+</div>
+</main>
+
+<script id="data" type="application/json">{"error":null,"rule":{"name":"Reflect + Stream","description":"hyperedge walkers {w,s,s'}: a position and a heading; one walker per channel (s, k), a blocked hop keeps the walker where it is; HPP collision: a head-on pair on one site leaves along the perpendicular channels, momentum and energy conserved; runs first in every step","rewrite":"{w,s,s} -> {w,s,s'}  (s' the neighbour opposite to the self-loop) ; {w,s,s'}_k, {s',s''}_k -> {w,s',s''}_k","matches":"2 rule(s) applied in order in every step; each one matches on the state the previous one produced","choice":"each rule draws its directions independently; all walkers rewritten at once by every rule","invariants":"number of walkers, one anchoring edge per walker, the space graph; the exclusion principle","physics":"0 hops per step in total; no chain rule, so no drift or diffusion prediction: D = (0, 0), drift v = (0, 0) for a = 1, tau = 1. Hyperedge walkers: a hop into a taken channel is blocked, which lowers the measured values at high density."},"rules":[{"name":"Collide","rewrite":"{w1,s,a}, {w2,s,b}, {s,c}, {s,d} -> {w1,s,c}, {w2,s,d}, {s,c}, {s,d}","matches":"a head-on pair at s (b opposite to a) whose perpendicular channels c, d are empty and real edges","choice":"which walker takes c is chosen uniformly; all pairs rewritten at once","invariants":"walkers, momentum (a + b = 0 = c + d), energy (speed c = a / tau), exclusion (one walker per channel)","physics":"the HPP collision: the only interaction of the lattice gas","description":"collisions: hpp (runs before the rules in every step)","pattern":"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 326 80\" width=\"326\" height=\"80\" class=\"pattern\" role=\"img\">\n<rect width=\"326\" height=\"80\" fill=\"white\" rx=\"6\"/>\n<line x1=\"75.0\" y1=\"20.8\" x2=\"89.0\" y2=\"20.8\" stroke=\"#f87171\" stroke-width=\"2\"/>\n<line x1=\"89.0\" y1=\"20.8\" x2=\"103.0\" y2=\"20.8\" stroke=\"#f87171\" stroke-width=\"2\"/>\n<line x1=\"89.0\" y1=\"20.8\" x2=\"89.0\" y2=\"20.8\" stroke=\"#f87171\" stroke-width=\"2\"/>\n<line x1=\"89.0\" y1=\"20.8\" x2=\"103.0\" y2=\"20.8\" stroke=\"#f87171\" stroke-width=\"2\"/>\n<line x1=\"89.0\" y1=\"20.8\" x2=\"117.0\" y2=\"20.8\" stroke=\"#f87171\" stroke-width=\"2\"/>\n<line x1=\"89.0\" y1=\"20.8\" x2=\"131.0\" y2=\"20.8\" stroke=\"#f87171\" stroke-width=\"2\"/>\n<circle cx=\"75.0\" cy=\"20.8\" r=\"7\" fill=\"#dc2626\"/><text x=\"75.0\" y=\"24.3\" font-size=\"9\" fill=\"white\" text-anchor=\"middle\" font-family=\"ui-monospace, monospace\">w1</text>\n<circle cx=\"89.0\" cy=\"20.8\" r=\"7\" fill=\"#dc2626\"/><text x=\"89.0\" y=\"24.3\" font-size=\"9\" fill=\"white\" text-anchor=\"middle\" font-family=\"ui-monospace, monospace\">s</text>\n<circle cx=\"103.0\" cy=\"20.8\" r=\"7\" fill=\"#dc2626\"/><text x=\"103.0\" y=\"24.3\" font-size=\"9\" fill=\"white\" text-anchor=\"middle\" font-family=\"ui-monospace, monospace\">a</text>\n<circle cx=\"89.0\" cy=\"20.8\" r=\"7\" fill=\"#dc2626\"/><text x=\"89.0\" y=\"24.3\" font-size=\"9\" fill=\"white\" text-anchor=\"middle\" font-family=\"ui-monospace, monospace\">w2</text>\n<circle cx=\"103.0\" cy=\"20.8\" r=\"7\" fill=\"#dc2626\"/><text x=\"103.0\" y=\"24.3\" font-size=\"9\" fill=\"white\" text-anchor=\"middle\" font-family=\"ui-monospace, monospace\">b</text>\n<circle cx=\"117.0\" cy=\"20.8\" r=\"7\" fill=\"#dc2626\"/><text x=\"117.0\" y=\"24.3\" font-size=\"9\" fill=\"white\" text-anchor=\"middle\" font-family=\"ui-monospace, monospace\">c</text>\n<circle cx=\"131.0\" cy=\"20.8\" r=\"7\" fill=\"#dc2626\"/><text x=\"131.0\" y=\"24.3\" font-size=\"9\" fill=\"white\" text-anchor=\"middle\" font-family=\"ui-monospace, monospace\">d</text>\n<line x1=\"251.0\" y1=\"20.8\" x2=\"265.0\" y2=\"20.8\" stroke=\"#f87171\" stroke-width=\"2\"/>\n<line x1=\"265.0\" y1=\"20.8\" x2=\"293.0\" y2=\"20.8\" stroke=\"#f87171\" stroke-width=\"2\"/>\n<line x1=\"265.0\" y1=\"20.8\" x2=\"265.0\" y2=\"20.8\" stroke=\"#f87171\" stroke-width=\"2\"/>\n<line x1=\"265.0\" y1=\"20.8\" x2=\"307.0\" y2=\"20.8\" stroke=\"#f87171\" stroke-width=\"2\"/>\n<line x1=\"265.0\" y1=\"20.8\" x2=\"293.0\" y2=\"20.8\" stroke=\"#f87171\" stroke-width=\"2\"/>\n<line x1=\"265.0\" y1=\"20.8\" x2=\"307.0\" y2=\"20.8\" stroke=\"#f87171\" stroke-width=\"2\"/>\n<circle cx=\"251.0\" cy=\"20.8\" r=\"7\" fill=\"#dc2626\"/><text x=\"251.0\" y=\"24.3\" font-size=\"9\" fill=\"white\" text-anchor=\"middle\" font-family=\"ui-monospace, monospace\">w1</text>\n<circle cx=\"265.0\" cy=\"20.8\" r=\"7\" fill=\"#dc2626\"/><text x=\"265.0\" y=\"24.3\" font-size=\"9\" fill=\"white\" text-anchor=\"middle\" font-family=\"ui-monospace, monospace\">s</text>\n<circle cx=\"265.0\" cy=\"20.8\" r=\"7\" fill=\"#dc2626\"/><text x=\"265.0\" y=\"24.3\" font-size=\"9\" fill=\"white\" text-anchor=\"middle\" font-family=\"ui-monospace, monospace\">w2</text>\n<circle cx=\"293.0\" cy=\"20.8\" r=\"7\" fill=\"#dc2626\"/><text x=\"293.0\" y=\"24.3\" font-size=\"9\" fill=\"white\" text-anchor=\"middle\" font-family=\"ui-monospace, monospace\">c</text>\n<circle cx=\"307.0\" cy=\"20.8\" r=\"7\" fill=\"#dc2626\"/><text x=\"307.0\" y=\"24.3\" font-size=\"9\" fill=\"white\" text-anchor=\"middle\" font-family=\"ui-monospace, monospace\">d</text>\n<path d=\"M 155.0 40.0 h 14 m -4 -4 l 4 4 l -4 4\" fill=\"none\" stroke=\"#374151\" stroke-width=\"1.5\"/>\n</svg>"},{"name":"Reflect","rewrite":"{w,s,s} -> {w,s,s'}  (s' the neighbour opposite to the self-loop)","matches":"a walker heading into a self-loop, i.e. into the wall","choice":"deterministic","invariants":"walkers, energy; momentum is exchanged with the wall","physics":"specular wall; never matches on a periodic lattice; no drift or diffusion prediction (hyperedge walkers only)","description":"a walker heading into a wall turns round","pattern":"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 326 80\" width=\"326\" height=\"80\" class=\"pattern\" role=\"img\">\n<rect width=\"326\" height=\"80\" fill=\"white\" rx=\"6\"/>\n<line x1=\"75.0\" y1=\"20.8\" x2=\"89.0\" y2=\"20.8\" stroke=\"#f87171\" stroke-width=\"2\"/>\n<line x1=\"89.0\" y1=\"20.8\" x2=\"89.0\" y2=\"20.8\" stroke=\"#f87171\" stroke-width=\"2\"/>\n<circle cx=\"89.0\" cy=\"9.8\" r=\"7\" fill=\"none\" stroke=\"#f87171\" stroke-width=\"1.5\"/>\n<circle cx=\"75.0\" cy=\"20.8\" r=\"7\" fill=\"#dc2626\"/><text x=\"75.0\" y=\"24.3\" font-size=\"9\" fill=\"white\" text-anchor=\"middle\" font-family=\"ui-monospace, monospace\">w</text>\n<circle cx=\"89.0\" cy=\"20.8\" r=\"7\" fill=\"#dc2626\"/><text x=\"89.0\" y=\"24.3\" font-size=\"9\" fill=\"white\" text-anchor=\"middle\" font-family=\"ui-monospace, monospace\">s</text>\n<circle cx=\"89.0\" cy=\"20.8\" r=\"7\" fill=\"#dc2626\"/><text x=\"89.0\" y=\"24.3\" font-size=\"9\" fill=\"white\" text-anchor=\"middle\" font-family=\"ui-monospace, monospace\">t</text>\n<line x1=\"251.0\" y1=\"20.8\" x2=\"265.0\" y2=\"20.8\" stroke=\"#f87171\" stroke-width=\"2\"/>\n<line x1=\"265.0\" y1=\"20.8\" x2=\"265.0\" y2=\"20.8\" stroke=\"#f87171\" stroke-width=\"2\"/>\n<circle cx=\"265.0\" cy=\"9.8\" r=\"7\" fill=\"none\" stroke=\"#f87171\" stroke-width=\"1.5\"/>\n<circle cx=\"251.0\" cy=\"20.8\" r=\"7\" fill=\"#dc2626\"/><text x=\"251.0\" y=\"24.3\" font-size=\"9\" fill=\"white\" text-anchor=\"middle\" font-family=\"ui-monospace, monospace\">w</text>\n<circle cx=\"265.0\" cy=\"20.8\" r=\"7\" fill=\"#dc2626\"/><text x=\"265.0\" y=\"24.3\" font-size=\"9\" fill=\"white\" text-anchor=\"middle\" font-family=\"ui-monospace, monospace\">s</text>\n<circle cx=\"265.0\" cy=\"20.8\" r=\"7\" fill=\"#dc2626\"/><text x=\"265.0\" y=\"24.3\" font-size=\"9\" fill=\"white\" text-anchor=\"middle\" font-family=\"ui-monospace, monospace\">t</text>\n<path d=\"M 155.0 40.0 h 14 m -4 -4 l 4 4 l -4 4\" fill=\"none\" stroke=\"#374151\" stroke-width=\"1.5\"/>\n</svg>"},{"name":"Stream","rewrite":"{w,s,s'}_k, {s',s''}_k -> {w,s',s''}_k","matches":"every walker, with the edge of the same direction label k at its target","choice":"deterministic","invariants":"walkers, momentum, energy, exclusion","physics":"free flight by one lattice spacing per step: speed c = a / tau; no drift or diffusion prediction (hyperedge walkers only)","description":"free flight: one edge per step along the heading","pattern":"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 326 80\" width=\"326\" height=\"80\" class=\"pattern\" role=\"img\">\n<rect width=\"326\" height=\"80\" fill=\"white\" rx=\"6\"/>\n<line x1=\"75.0\" y1=\"20.8\" x2=\"89.0\" y2=\"20.8\" stroke=\"#f87171\" stroke-width=\"2\"/>\n<line x1=\"89.0\" y1=\"20.8\" x2=\"103.0\" y2=\"20.8\" stroke=\"#f87171\" stroke-width=\"2\"/>\n<circle cx=\"103.0\" cy=\"9.8\" r=\"7\" fill=\"none\" stroke=\"#f87171\" stroke-width=\"1.5\"/>\n<circle cx=\"75.0\" cy=\"20.8\" r=\"7\" fill=\"#dc2626\"/><text x=\"75.0\" y=\"24.3\" font-size=\"9\" fill=\"white\" text-anchor=\"middle\" font-family=\"ui-monospace, monospace\">w</text>\n<circle cx=\"89.0\" cy=\"20.8\" r=\"7\" fill=\"#dc2626\"/><text x=\"89.0\" y=\"24.3\" font-size=\"9\" fill=\"white\" text-anchor=\"middle\" font-family=\"ui-monospace, monospace\">s</text>\n<circle cx=\"103.0\" cy=\"20.8\" r=\"7\" fill=\"#dc2626\"/><text x=\"103.0\" y=\"24.3\" font-size=\"9\" fill=\"white\" text-anchor=\"middle\" font-family=\"ui-monospace, monospace\">t</text>\n<circle cx=\"103.0\" cy=\"20.8\" r=\"7\" fill=\"#dc2626\"/><text x=\"103.0\" y=\"24.3\" font-size=\"9\" fill=\"white\" text-anchor=\"middle\" font-family=\"ui-monospace, monospace\">u</text>\n<line x1=\"251.0\" y1=\"20.8\" x2=\"279.0\" y2=\"20.8\" stroke=\"#f87171\" stroke-width=\"2\"/>\n<line x1=\"279.0\" y1=\"20.8\" x2=\"279.0\" y2=\"20.8\" stroke=\"#f87171\" stroke-width=\"2\"/>\n<circle cx=\"279.0\" cy=\"9.8\" r=\"7\" fill=\"none\" stroke=\"#f87171\" stroke-width=\"1.5\"/>\n<circle cx=\"251.0\" cy=\"20.8\" r=\"7\" fill=\"#dc2626\"/><text x=\"251.0\" y=\"24.3\" font-size=\"9\" fill=\"white\" text-anchor=\"middle\" font-family=\"ui-monospace, monospace\">w</text>\n<circle cx=\"279.0\" cy=\"20.8\" r=\"7\" fill=\"#dc2626\"/><text x=\"279.0\" y=\"24.3\" font-size=\"9\" fill=\"white\" text-anchor=\"middle\" font-family=\"ui-monospace, monospace\">t</text>\n<circle cx=\"279.0\" cy=\"20.8\" r=\"7\" fill=\"#dc2626\"/><text x=\"279.0\" y=\"24.3\" font-size=\"9\" fill=\"white\" text-anchor=\"middle\" font-family=\"ui-monospace, monospace\">u</text>\n<path d=\"M 155.0 40.0 h 14 m -4 -4 l 4 4 l -4 4\" fill=\"none\" stroke=\"#374151\" stroke-width=\"1.5\"/>\n</svg>"},{"name":"Reflect + Stream","description":"hyperedge walkers {w,s,s'}: a position and a heading; one walker per channel (s, k), a blocked hop keeps the walker where it is; HPP collision: a head-on pair on one site leaves along the perpendicular channels, momentum and energy conserved; runs first in every step","rewrite":"{w,s,s} -> {w,s,s'}  (s' the neighbour opposite to the self-loop) ; {w,s,s'}_k, {s',s''}_k -> {w,s',s''}_k","matches":"2 rule(s) applied in order in every step; each one matches on the state the previous one produced","choice":"each rule draws its directions independently; all walkers rewritten at once by every rule","invariants":"number of walkers, one anchoring edge per walker, the space graph; the exclusion principle","physics":"0 hops per step in total; no chain rule, so no drift or diffusion prediction: D = (0, 0), drift v = (0, 0) for a = 1, tau = 1. Hyperedge walkers: a hop into a taken channel is blocked, which lowers the measured values at high density."}],"specs":[{"name":"Reflect","builtin":"reflect","notation":"{w,s,s} -> {w,s,s'}  (s' the neighbour opposite to the self-loop)","description":"a walker heading into a wall turns round"},{"name":"Stream","builtin":"stream","notation":"{w,s,s'}_k, {s',s''}_k -> {w,s',s''}_k","description":"free flight: one edge per step along the heading"}],"model":{"walker_model":"hyperedge","collisions":"hpp","heading":"random"},"docs":"<h3>Walker models and collisions</h3>\n<p>What happens when two walkers meet depends on what a walker <em>is</em>. The playground offers two walker models\nand two collision behaviours; they are part of the rule configuration, next to the rules themselves.</p>\n<table class=\"kv\">\n<thead><tr><th>walker model</th><th>a walker is</th><th>when two walkers want the same place</th></tr></thead>\n<tbody>\n<tr><th>edge</th><td>the edge <code>{w,s}</code>: a position, nothing else</td>\n<td>nothing happens. Any number of walkers may share a site and they pass through each other; the chain rules move\nevery walker independently. This is the model of the Brownian imitation: point particles that do not interact.</td></tr>\n<tr><th>hyperedge</th><td>the hyperedge <code>{w,s,s'}</code>: a position <em>and</em> a heading, the direction label\n<code>k</code> (+x, &minus;x, +y, &minus;y) of the edge from <code>s</code> to <code>s'</code></td>\n<td>the <em>exclusion principle</em>: at most one walker per channel <code>(s, k)</code>, so at most four walkers per\nsite and never two with the same heading. A rule that would put two walkers into one channel is <em>blocked</em> for\nthe loser: it keeps its channel (ties are drawn at random, a channel that is taken in the current state is never\nentered). The HPP lattice gas never blocks; blocked hops are counted in the measured values.</td></tr>\n</tbody>\n</table>\n<table class=\"kv\">\n<thead><tr><th>collisions</th><th>what it does</th><th>conserves</th></tr></thead>\n<tbody>\n<tr><th>none</th><td>no interaction rule. Edge walkers ignore each other; hyperedge walkers only feel the exclusion.</td>\n<td>the number of walkers</td></tr>\n<tr><th>hpp</th><td>the Collide rule of the HPP lattice gas (Hardy, Pomeau, de Pazzis 1973) runs first in every step:\n<code>{w1,s,a}, {w2,s,b}, {s,c}, {s,d} &rarr; {w1,s,c}, {w2,s,d}, {s,c}, {s,d}</code>. Two walkers on one site heading in\nopposite directions <code>a, b</code> leave along the perpendicular pair <code>c, d</code>, provided those channels are\nempty and are real edges (not wall self-loops); which walker takes <code>c</code> is drawn at random. Needs hyperedge\nwalkers, because a collision needs a direction to change. The collision sites are ringed in the step-by-step animation.</td>\n<td>walkers, momentum (<code>a + b = 0 = c + d</code>), energy (every walker keeps the speed <code>a / &tau;</code>),\nthe exclusion</td></tr>\n</tbody>\n</table>\n<p>Rules on hyperedge walkers: a <em>chain rule</em> moves the walker along its chain as it does for edge walkers, and\nthe label of the last hop becomes the new heading (a walker that stays keeps its heading). The built-in rules\n<em>Stream</em> (move one edge along the heading, keep the label) and <em>Reflect</em> (a walker heading into a wall\nself-loop turns round, the wall takes the momentum) only exist for hyperedge walkers; ticking Stream and Reflect with\n<em>hpp</em> collisions is the HPP lattice gas of the gas report. The drift and diffusion prediction counts the chain\nrules only, and holds at low density; blocked hops lower the measured values when the world is crowded.</p>\n","universe":{"size":9,"walls":"reflecting","placement":"left","sites":[30,3,5,5,1,33,33,26,7,2,11,14,23,15,16,2,26,18,0,8,17,11,28,20],"directions":[1,0,0,3,0,3,0,1,1,1,0,2,3,2,1,2,3,0,0,3,0,2,0,1],"walkers":24,"walker_model":"hyperedge","collisions":"hpp","heading":"random","steps":60,"seed":3,"spacing":1.0,"step_time":1.0},"demo":{"times":[0.0,1.0,2.0,3.0,4.0,5.0,6.0,7.0,8.0,9.0,10.0,11.0,12.0,13.0,14.0,15.0,16.0,17.0,18.0,19.0,20.0,21.0,22.0,23.0,24.0,25.0,26.0,27.0,28.0,29.0,30.0,31.0,32.0,33.0,34.0,35.0,36.0,37.0,38.0,39.0,40.0,41.0,42.0,43.0,44.0,45.0,46.0,47.0,48.0,49.0,50.0,51.0,52.0,53.0,54.0,55.0,56.0,57.0,58.0,59.0,60.0],"anchors":[[30,3,5,5,1,33,33,26,7,2,11,14,23,15,16,2,26,18,0,8,17,11,28,20],[21,12,14,4,10,32,42,17,16,11,20,15,22,16,7,3,25,27,9,7,26,12,37,11],[12,21,23,3,19,31,51,8,25,10,29,16,21,17,16,4,24,36,18,6,35,13,46,12],[3,30,32,2,28,30,60,17,34,9,38,17,20,16,25,5,23,45,27,5,44,14,55,13],[12,39,41,1,37,29,69,26,43,10,47,16,19,15,34,6,22,54,36,4,53,15,64,14],[21,48,50,0,46,28,78,35,52,11,56,15,18,6,43,7,21,63,45,3,62,24,73,15],[30,57,59,1,55,27,69,44,61,12,65,6,19,15,52,8,20,72,54,2,71,33,64,24],[39,66,68,2,64,28,60,53,70,13,74,15,20,24,61,7,19,63,63,1,80,42,55,33],[48,75,77,3,73,29,51,62,79,14,65,24,21,33,70,6,18,54,72,0,71,51,46,42],[57,66,68,4,64,30,52,71,70,15,56,33,22,42,79,5,19,45,63,1,62,50,37,51],[66,57,59,5,55,31,53,80,61,16,47,42,23,51,70,4,20,36,54,2,53,49,28,60],[75,48,50,6,46,32,52,71,52,17,38,51,24,60,61,3,21,27,45,3,44,48,19,69],[66,39,41,7,37,33,51,62,43,16,29,60,25,69,52,2,22,18,36,4,35,47,10,78],[57,30,32,8,28,34,50,53,34,15,20,69,26,78,43,1,23,9,27,5,26,46,1,69],[48,21,23,7,19,35,49,44,25,14,11,68,25,69,34,0,24,0,18,6,17,45,10,70],[39,12,14,6,10,34,48,35,16,13,2,67,24,60,25,1,25,9,9,7,8,46,19,71],[30,3,5,5,1,33,47,26,7,12,11,66,23,51,16,2,26,18,0,8,17,47,28,70],[21,12,14,4,10,32,38,17,16,11,20,65,22,42,7,3,25,27,9,7,26,56,37,69],[12,21,23,3,19,31,29,8,25,10,29,64,21,33,16,4,24,36,18,6,35,65,46,68],[3,30,32,2,28,30,28,17,34,9,30,63,20,24,25,5,23,45,27,5,44,74,55,67],[12,39,41,1,37,29,27,26,43,10,31,64,19,15,34,6,22,54,36,4,53,65,64,66],[21,48,50,0,46,28,28,35,52,11,32,65,18,6,43,7,21,63,45,3,62,56,73,65],[30,57,59,1,55,19,37,44,61,12,33,56,19,15,52,8,20,72,54,2,71,47,64,74],[39,66,68,2,64,10,46,53,70,13,34,47,20,24,61,7,19,63,63,1,80,38,55,65],[48,75,77,3,73,1,55,62,79,14,35,38,21,33,70,6,18,54,72,0,71,29,46,56],[57,66,68,4,64,10,64,71,70,15,34,29,22,42,79,5,19,45,63,1,62,20,37,47],[66,57,59,5,65,19,63,80,61,16,33,20,23,51,70,4,20,36,54,2,53,11,28,38],[75,48,50,6,66,28,64,71,52,17,32,11,24,60,61,3,21,27,45,3,44,2,19,29],[66,39,41,7,67,37,65,62,43,16,31,2,25,69,52,2,22,18,36,4,35,11,10,20],[57,30,32,8,68,46,66,53,34,15,30,11,26,78,43,1,23,9,27,5,26,20,1,11],[48,21,23,7,69,55,67,44,25,14,29,12,25,69,34,0,24,0,18,6,17,29,10,10],[39,12,14,6,70,64,68,35,16,13,28,13,24,60,25,1,25,9,9,7,8,38,19,9],[30,3,5,5,71,73,69,26,7,22,27,4,23,51,16,2,26,18,0,8,17,47,28,10],[21,12,14,4,70,64,70,17,16,31,28,13,22,42,7,3,25,27,9,7,26,56,37,11],[12,21,23,3,61,55,79,8,25,40,29,22,21,33,16,4,24,36,18,6,35,65,46,12],[3,30,32,2,52,46,70,17,34,49,30,31,20,24,25,5,23,45,27,5,44,74,55,13],[12,39,41,1,43,37,61,26,43,58,31,40,19,15,34,6,22,54,36,4,53,65,64,14],[21,48,50,0,42,28,52,35,44,67,32,49,18,6,43,7,21,63,45,3,62,56,73,15],[30,57,59,1,41,19,43,44,43,76,33,58,19,15,52,8,20,72,54,2,71,47,64,16],[39,66,68,2,40,10,34,53,42,67,34,67,20,24,61,7,19,63,63,1,80,38,55,17],[48,75,77,3,39,1,25,62,41,68,35,66,21,33,70,6,18,54,72,0,71,29,46,16],[57,66,68,4,38,10,16,71,40,69,34,65,22,42,79,5,19,45,63,1,62,20,37,15],[66,57,59,5,37,19,7,80,39,70,33,64,23,51,70,4,20,36,54,2,53,11,28,14],[75,48,50,6,36,28,16,71,38,71,32,63,24,60,61,3,21,27,45,3,44,2,19,13],[66,39,41,7,37,37,25,62,37,70,31,64,25,69,52,2,22,18,36,4,35,11,10,12],[57,30,32,8,38,46,34,53,36,69,30,65,26,78,43,1,23,9,27,5,26,20,1,11],[48,21,23,7,39,55,43,44,37,68,29,66,25,69,34,0,24,0,18,6,17,29,10,10],[39,12,14,6,40,64,52,35,38,67,28,67,24,60,25,1,25,9,9,7,8,38,19,9],[30,3,5,5,41,73,61,26,39,58,27,76,23,51,16,2,26,18,0,8,17,47,28,10],[21,12,14,4,42,64,70,17,40,49,28,67,22,42,7,3,25,27,9,7,26,56,37,11],[12,21,23,3,43,55,79,8,41,40,29,58,21,33,16,4,24,36,18,6,35,65,46,12],[3,30,32,2,44,46,70,17,42,31,30,49,20,24,25,5,23,45,27,5,44,74,55,13],[12,39,41,1,43,37,61,26,43,22,31,40,19,15,34,6,22,54,36,4,53,65,64,14],[21,48,50,0,52,28,52,35,34,13,32,31,18,6,43,7,21,63,45,3,62,56,73,15],[30,57,59,1,53,19,51,44,25,4,33,22,19,15,52,8,20,72,54,2,71,47,64,16],[39,66,68,2,52,10,50,53,16,13,34,13,20,24,61,7,19,63,63,1,80,38,55,17],[48,75,77,3,51,1,49,62,7,12,35,14,21,33,70,6,18,54,72,0,71,29,46,16],[57,66,68,4,50,10,48,71,16,11,34,15,22,42,79,5,19,45,63,1,62,20,37,15],[66,57,59,5,49,19,47,80,25,10,33,6,23,51,70,4,20,36,54,2,53,11,28,24],[75,48,50,6,48,28,46,71,34,9,32,15,24,60,61,3,21,27,45,3,44,2,19,33],[66,39,41,7,47,37,45,62,43,10,31,24,25,69,52,2,22,18,36,4,35,11,10,42]],"paths":[[[30,30,21],[3,3,12],[5,5,14],[5,5,4],[1,1,10],[33,33,32],[33,33,42],[26,26,17],[7,7,16],[2,2,11],[11,11,20],[14,14,15],[23,23,22],[15,15,16],[16,16,7],[2,2,3],[26,26,25],[18,18,27],[0,0,9],[8,8,7],[17,17,26],[11,11,12],[28,28,37],[20,20,11]],[[21,21,12],[12,12,21],[14,14,23],[4,4,3],[10,10,19],[32,32,31],[42,42,51],[17,17,8],[16,16,25],[11,11,10],[20,20,29],[15,15,16],[22,22,21],[16,16,17],[7,7,16],[3,3,4],[25,25,24],[27,27,36],[9,9,18],[7,7,6],[26,26,35],[12,12,13],[37,37,46],[11,11,12]],[[12,12,3],[21,21,30],[23,23,32],[3,3,2],[19,19,28],[31,31,30],[51,51,60],[8,8,17],[25,25,34],[10,10,9],[29,29,38],[16,16,17],[21,21,20],[17,17,16],[16,16,25],[4,4,5],[24,24,23],[36,36,45],[18,18,27],[6,6,5],[35,35,44],[13,13,14],[46,46,55],[12,12,13]],[[3,3,12],[30,30,39],[32,32,41],[2,2,1],[28,28,37],[30,30,29],[60,60,69],[17,17,26],[34,34,43],[9,9,10],[38,38,47],[17,17,16],[20,20,19],[16,16,15],[25,25,34],[5,5,6],[23,23,22],[45,45,54],[27,27,36],[5,5,4],[44,44,53],[14,14,15],[55,55,64],[13,13,14]],[[12,12,21],[39,39,48],[41,41,50],[1,1,0],[37,37,46],[29,29,28],[69,69,78],[26,26,35],[43,43,52],[10,10,11],[47,47,56],[16,16,15],[19,19,18],[15,15,6],[34,34,43],[6,6,7],[22,22,21],[54,54,63],[36,36,45],[4,4,3],[53,53,62],[15,15,24],[64,64,73],[14,14,15]],[[21,21,30],[48,48,57],[50,50,59],[0,0,1],[46,46,55],[28,28,27],[78,78,69],[35,35,44],[52,52,61],[11,11,12],[56,56,65],[15,15,6],[18,18,19],[6,6,15],[43,43,52],[7,7,8],[21,21,20],[63,63,72],[45,45,54],[3,3,2],[62,62,71],[24,24,33],[73,73,64],[15,15,24]],[[30,30,39],[57,57,66],[59,59,68],[1,1,2],[55,55,64],[27,27,28],[69,69,60],[44,44,53],[61,61,70],[12,12,13],[65,65,74],[6,6,15],[19,19,20],[15,15,24],[52,52,61],[8,8,7],[20,20,19],[72,72,63],[54,54,63],[2,2,1],[71,71,80],[33,33,42],[64,64,55],[24,24,33]],[[39,39,48],[66,66,75],[68,68,77],[2,2,3],[64,64,73],[28,28,29],[60,60,51],[53,53,62],[70,70,79],[13,13,14],[74,74,65],[15,15,24],[20,20,21],[24,24,33],[61,61,70],[7,7,6],[19,19,18],[63,63,54],[63,63,72],[1,1,0],[80,80,71],[42,42,51],[55,55,46],[33,33,42]],[[48,48,57],[75,75,66],[77,77,68],[3,3,4],[73,73,64],[29,29,30],[51,51,52],[62,62,71],[79,79,70],[14,14,15],[65,65,56],[24,24,33],[21,21,22],[33,33,42],[70,70,79],[6,6,5],[18,18,19],[54,54,45],[72,72,63],[0,0,1],[71,71,62],[51,51,50],[46,46,37],[42,42,51]],[[57,57,66],[66,66,57],[68,68,59],[4,4,5],[64,64,55],[30,30,31],[52,52,53],[71,71,80],[70,70,61],[15,15,16],[56,56,47],[33,33,42],[22,22,23],[42,42,51],[79,79,70],[5,5,4],[19,19,20],[45,45,36],[63,63,54],[1,1,2],[62,62,53],[50,50,49],[37,37,28],[51,51,60]],[[66,66,75],[57,57,48],[59,59,50],[5,5,6],[55,55,46],[31,31,32],[53,53,52],[80,80,71],[61,61,52],[16,16,17],[47,47,38],[42,42,51],[23,23,24],[51,51,60],[70,70,61],[4,4,3],[20,20,21],[36,36,27],[54,54,45],[2,2,3],[53,53,44],[49,49,48],[28,28,19],[60,60,69]],[[75,75,66],[48,48,39],[50,50,41],[6,6,7],[46,46,37],[32,32,33],[52,52,51],[71,71,62],[52,52,43],[17,17,16],[38,38,29],[51,51,60],[24,24,25],[60,60,69],[61,61,52],[3,3,2],[21,21,22],[27,27,18],[45,45,36],[3,3,4],[44,44,35],[48,48,47],[19,19,10],[69,69,78]],[[66,66,57],[39,39,30],[41,41,32],[7,7,8],[37,37,28],[33,33,34],[51,51,50],[62,62,53],[43,43,34],[16,16,15],[29,29,20],[60,60,69],[25,25,26],[69,69,78],[52,52,43],[2,2,1],[22,22,23],[18,18,9],[36,36,27],[4,4,5],[35,35,26],[47,47,46],[10,10,1],[78,78,69]],[[57,57,48],[30,30,21],[32,32,23],[8,8,7],[28,28,19],[34,34,35],[50,50,49],[53,53,44],[34,34,25],[15,15,14],[20,20,11],[69,69,68],[26,26,25],[78,78,69],[43,43,34],[1,1,0],[23,23,24],[9,9,0],[27,27,18],[5,5,6],[26,26,17],[46,46,45],[1,1,10],[69,69,70]],[[48,48,39],[21,21,12],[23,23,14],[7,7,6],[19,19,10],[35,35,34],[49,49,48],[44,44,35],[25,25,16],[14,14,13],[11,11,2],[68,68,67],[25,25,24],[69,69,60],[34,34,25],[0,0,1],[24,24,25],[0,0,9],[18,18,9],[6,6,7],[17,17,8],[45,45,46],[10,10,19],[70,70,71]],[[39,39,30],[12,12,3],[14,14,5],[6,6,5],[10,10,1],[34,34,33],[48,48,47],[35,35,26],[16,16,7],[13,13,12],[2,2,11],[67,67,66],[24,24,23],[60,60,51],[25,25,16],[1,1,2],[25,25,26],[9,9,18],[9,9,0],[7,7,8],[8,8,17],[46,46,47],[19,19,28],[71,71,70]],[[30,30,21],[3,3,12],[5,5,14],[5,5,4],[1,1,10],[33,33,32],[47,47,38],[26,26,17],[7,7,16],[12,12,11],[11,11,20],[66,66,65],[23,23,22],[51,51,42],[16,16,7],[2,2,3],[26,26,25],[18,18,27],[0,0,9],[8,8,7],[17,17,26],[47,47,56],[28,28,37],[70,70,69]],[[21,21,12],[12,12,21],[14,14,23],[4,4,3],[10,10,19],[32,32,31],[38,38,29],[17,17,8],[16,16,25],[11,11,10],[20,20,29],[65,65,64],[22,22,21],[42,42,33],[7,7,16],[3,3,4],[25,25,24],[27,27,36],[9,9,18],[7,7,6],[26,26,35],[56,56,65],[37,37,46],[69,69,68]],[[12,12,3],[21,21,30],[23,23,32],[3,3,2],[19,19,28],[31,31,30],[29,29,28],[8,8,17],[25,25,34],[10,10,9],[29,29,30],[64,64,63],[21,21,20],[33,33,24],[16,16,25],[4,4,5],[24,24,23],[36,36,45],[18,18,27],[6,6,5],[35,35,44],[65,65,74],[46,46,55],[68,68,67]],[[3,3,12],[30,30,39],[32,32,41],[2,2,1],[28,28,37],[30,30,29],[28,28,27],[17,17,26],[34,34,43],[9,9,10],[30,30,31],[63,63,64],[20,20,19],[24,24,15],[25,25,34],[5,5,6],[23,23,22],[45,45,54],[27,27,36],[5,5,4],[44,44,53],[74,74,65],[55,55,64],[67,67,66]],[[12,12,21],[39,39,48],[41,41,50],[1,1,0],[37,37,46],[29,29,28],[27,27,28],[26,26,35],[43,43,52],[10,10,11],[31,31,32],[64,64,65],[19,19,18],[15,15,6],[34,34,43],[6,6,7],[22,22,21],[54,54,63],[36,36,45],[4,4,3],[53,53,62],[65,65,56],[64,64,73],[66,66,65]],[[21,21,30],[48,48,57],[50,50,59],[0,0,1],[46,46,55],[28,28,19],[28,28,37],[35,35,44],[52,52,61],[11,11,12],[32,32,33],[65,65,56],[18,18,19],[6,6,15],[43,43,52],[7,7,8],[21,21,20],[63,63,72],[45,45,54],[3,3,2],[62,62,71],[56,56,47],[73,73,64],[65,65,74]],[[30,30,39],[57,57,66],[59,59,68],[1,1,2],[55,55,64],[19,19,10],[37,37,46],[44,44,53],[61,61,70],[12,12,13],[33,33,34],[56,56,47],[19,19,20],[15,15,24],[52,52,61],[8,8,7],[20,20,19],[72,72,63],[54,54,63],[2,2,1],[71,71,80],[47,47,38],[64,64,55],[74,74,65]],[[39,39,48],[66,66,75],[68,68,77],[2,2,3],[64,64,73],[10,10,1],[46,46,55],[53,53,62],[70,70,79],[13,13,14],[34,34,35],[47,47,38],[20,20,21],[24,24,33],[61,61,70],[7,7,6],[19,19,18],[63,63,54],[63,63,72],[1,1,0],[80,80,71],[38,38,29],[55,55,46],[65,65,56]],[[48,48,57],[75,75,66],[77,77,68],[3,3,4],[73,73,64],[1,1,10],[55,55,64],[62,62,71],[79,79,70],[14,14,15],[35,35,34],[38,38,29],[21,21,22],[33,33,42],[70,70,79],[6,6,5],[18,18,19],[54,54,45],[72,72,63],[0,0,1],[71,71,62],[29,29,20],[46,46,37],[56,56,47]],[[57,57,66],[66,66,57],[68,68,59],[4,4,5],[64,64,65],[10,10,19],[64,64,63],[71,71,80],[70,70,61],[15,15,16],[34,34,33],[29,29,20],[22,22,23],[42,42,51],[79,79,70],[5,5,4],[19,19,20],[45,45,36],[63,63,54],[1,1,2],[62,62,53],[20,20,11],[37,37,28],[47,47,38]],[[66,66,75],[57,57,48],[59,59,50],[5,5,6],[65,65,66],[19,19,28],[63,63,64],[80,80,71],[61,61,52],[16,16,17],[33,33,32],[20,20,11],[23,23,24],[51,51,60],[70,70,61],[4,4,3],[20,20,21],[36,36,27],[54,54,45],[2,2,3],[53,53,44],[11,11,2],[28,28,19],[38,38,29]],[[75,75,66],[48,48,39],[50,50,41],[6,6,7],[66,66,67],[28,28,37],[64,64,65],[71,71,62],[52,52,43],[17,17,16],[32,32,31],[11,11,2],[24,24,25],[60,60,69],[61,61,52],[3,3,2],[21,21,22],[27,27,18],[45,45,36],[3,3,4],[44,44,35],[2,2,11],[19,19,10],[29,29,20]],[[66,66,57],[39,39,30],[41,41,32],[7,7,8],[67,67,68],[37,37,46],[65,65,66],[62,62,53],[43,43,34],[16,16,15],[31,31,30],[2,2,11],[25,25,26],[69,69,78],[52,52,43],[2,2,1],[22,22,23],[18,18,9],[36,36,27],[4,4,5],[35,35,26],[11,11,20],[10,10,1],[20,20,11]],[[57,57,48],[30,30,21],[32,32,23],[8,8,7],[68,68,69],[46,46,55],[66,66,67],[53,53,44],[34,34,25],[15,15,14],[30,30,29],[11,11,12],[26,26,25],[78,78,69],[43,43,34],[1,1,0],[23,23,24],[9,9,0],[27,27,18],[5,5,6],[26,26,17],[20,20,29],[1,1,10],[11,11,10]],[[48,48,39],[21,21,12],[23,23,14],[7,7,6],[69,69,70],[55,55,64],[67,67,68],[44,44,35],[25,25,16],[14,14,13],[29,29,28],[12,12,13],[25,25,24],[69,69,60],[34,34,25],[0,0,1],[24,24,25],[0,0,9],[18,18,9],[6,6,7],[17,17,8],[29,29,38],[10,10,19],[10,10,9]],[[39,39,30],[12,12,3],[14,14,5],[6,6,5],[70,70,71],[64,64,73],[68,68,69],[35,35,26],[16,16,7],[13,13,22],[28,28,27],[13,13,4],[24,24,23],[60,60,51],[25,25,16],[1,1,2],[25,25,26],[9,9,18],[9,9,0],[7,7,8],[8,8,17],[38,38,47],[19,19,28],[9,9,10]],[[30,30,21],[3,3,12],[5,5,14],[5,5,4],[71,71,70],[73,73,64],[69,69,70],[26,26,17],[7,7,16],[22,22,31],[27,27,28],[4,4,13],[23,23,22],[51,51,42],[16,16,7],[2,2,3],[26,26,25],[18,18,27],[0,0,9],[8,8,7],[17,17,26],[47,47,56],[28,28,37],[10,10,11]],[[21,21,12],[12,12,21],[14,14,23],[4,4,3],[70,70,61],[64,64,55],[70,70,79],[17,17,8],[16,16,25],[31,31,40],[28,28,29],[13,13,22],[22,22,21],[42,42,33],[7,7,16],[3,3,4],[25,25,24],[27,27,36],[9,9,18],[7,7,6],[26,26,35],[56,56,65],[37,37,46],[11,11,12]],[[12,12,3],[21,21,30],[23,23,32],[3,3,2],[61,61,52],[55,55,46],[79,79,70],[8,8,17],[25,25,34],[40,40,49],[29,29,30],[22,22,31],[21,21,20],[33,33,24],[16,16,25],[4,4,5],[24,24,23],[36,36,45],[18,18,27],[6,6,5],[35,35,44],[65,65,74],[46,46,55],[12,12,13]],[[3,3,12],[30,30,39],[32,32,41],[2,2,1],[52,52,43],[46,46,37],[70,70,61],[17,17,26],[34,34,43],[49,49,58],[30,30,31],[31,31,40],[20,20,19],[24,24,15],[25,25,34],[5,5,6],[23,23,22],[45,45,54],[27,27,36],[5,5,4],[44,44,53],[74,74,65],[55,55,64],[13,13,14]],[[12,12,21],[39,39,48],[41,41,50],[1,1,0],[43,43,42],[37,37,28],[61,61,52],[26,26,35],[43,43,44],[58,58,67],[31,31,32],[40,40,49],[19,19,18],[15,15,6],[34,34,43],[6,6,7],[22,22,21],[54,54,63],[36,36,45],[4,4,3],[53,53,62],[65,65,56],[64,64,73],[14,14,15]],[[21,21,30],[48,48,57],[50,50,59],[0,0,1],[42,42,41],[28,28,19],[52,52,43],[35,35,44],[44,44,43],[67,67,76],[32,32,33],[49,49,58],[18,18,19],[6,6,15],[43,43,52],[7,7,8],[21,21,20],[63,63,72],[45,45,54],[3,3,2],[62,62,71],[56,56,47],[73,73,64],[15,15,16]],[[30,30,39],[57,57,66],[59,59,68],[1,1,2],[41,41,40],[19,19,10],[43,43,34],[44,44,53],[43,43,42],[76,76,67],[33,33,34],[58,58,67],[19,19,20],[15,15,24],[52,52,61],[8,8,7],[20,20,19],[72,72,63],[54,54,63],[2,2,1],[71,71,80],[47,47,38],[64,64,55],[16,16,17]],[[39,39,48],[66,66,75],[68,68,77],[2,2,3],[40,40,39],[10,10,1],[34,34,25],[53,53,62],[42,42,41],[67,67,68],[34,34,35],[67,67,66],[20,20,21],[24,24,33],[61,61,70],[7,7,6],[19,19,18],[63,63,54],[63,63,72],[1,1,0],[80,80,71],[38,38,29],[55,55,46],[17,17,16]],[[48,48,57],[75,75,66],[77,77,68],[3,3,4],[39,39,38],[1,1,10],[25,25,16],[62,62,71],[41,41,40],[68,68,69],[35,35,34],[66,66,65],[21,21,22],[33,33,42],[70,70,79],[6,6,5],[18,18,19],[54,54,45],[72,72,63],[0,0,1],[71,71,62],[29,29,20],[46,46,37],[16,16,15]],[[57,57,66],[66,66,57],[68,68,59],[4,4,5],[38,38,37],[10,10,19],[16,16,7],[71,71,80],[40,40,39],[69,69,70],[34,34,33],[65,65,64],[22,22,23],[42,42,51],[79,79,70],[5,5,4],[19,19,20],[45,45,36],[63,63,54],[1,1,2],[62,62,53],[20,20,11],[37,37,28],[15,15,14]],[[66,66,75],[57,57,48],[59,59,50],[5,5,6],[37,37,36],[19,19,28],[7,7,16],[80,80,71],[39,39,38],[70,70,71],[33,33,32],[64,64,63],[23,23,24],[51,51,60],[70,70,61],[4,4,3],[20,20,21],[36,36,27],[54,54,45],[2,2,3],[53,53,44],[11,11,2],[28,28,19],[14,14,13]],[[75,75,66],[48,48,39],[50,50,41],[6,6,7],[36,36,37],[28,28,37],[16,16,25],[71,71,62],[38,38,37],[71,71,70],[32,32,31],[63,63,64],[24,24,25],[60,60,69],[61,61,52],[3,3,2],[21,21,22],[27,27,18],[45,45,36],[3,3,4],[44,44,35],[2,2,11],[19,19,10],[13,13,12]],[[66,66,57],[39,39,30],[41,41,32],[7,7,8],[37,37,38],[37,37,46],[25,25,34],[62,62,53],[37,37,36],[70,70,69],[31,31,30],[64,64,65],[25,25,26],[69,69,78],[52,52,43],[2,2,1],[22,22,23],[18,18,9],[36,36,27],[4,4,5],[35,35,26],[11,11,20],[10,10,1],[12,12,11]],[[57,57,48],[30,30,21],[32,32,23],[8,8,7],[38,38,39],[46,46,55],[34,34,43],[53,53,44],[36,36,37],[69,69,68],[30,30,29],[65,65,66],[26,26,25],[78,78,69],[43,43,34],[1,1,0],[23,23,24],[9,9,0],[27,27,18],[5,5,6],[26,26,17],[20,20,29],[1,1,10],[11,11,10]],[[48,48,39],[21,21,12],[23,23,14],[7,7,6],[39,39,40],[55,55,64],[43,43,52],[44,44,35],[37,37,38],[68,68,67],[29,29,28],[66,66,67],[25,25,24],[69,69,60],[34,34,25],[0,0,1],[24,24,25],[0,0,9],[18,18,9],[6,6,7],[17,17,8],[29,29,38],[10,10,19],[10,10,9]],[[39,39,30],[12,12,3],[14,14,5],[6,6,5],[40,40,41],[64,64,73],[52,52,61],[35,35,26],[38,38,39],[67,67,58],[28,28,27],[67,67,76],[24,24,23],[60,60,51],[25,25,16],[1,1,2],[25,25,26],[9,9,18],[9,9,0],[7,7,8],[8,8,17],[38,38,47],[19,19,28],[9,9,10]],[[30,30,21],[3,3,12],[5,5,14],[5,5,4],[41,41,42],[73,73,64],[61,61,70],[26,26,17],[39,39,40],[58,58,49],[27,27,28],[76,76,67],[23,23,22],[51,51,42],[16,16,7],[2,2,3],[26,26,25],[18,18,27],[0,0,9],[8,8,7],[17,17,26],[47,47,56],[28,28,37],[10,10,11]],[[21,21,12],[12,12,21],[14,14,23],[4,4,3],[42,42,43],[64,64,55],[70,70,79],[17,17,8],[40,40,41],[49,49,40],[28,28,29],[67,67,58],[22,22,21],[42,42,33],[7,7,16],[3,3,4],[25,25,24],[27,27,36],[9,9,18],[7,7,6],[26,26,35],[56,56,65],[37,37,46],[11,11,12]],[[12,12,3],[21,21,30],[23,23,32],[3,3,2],[43,43,44],[55,55,46],[79,79,70],[8,8,17],[41,41,42],[40,40,31],[29,29,30],[58,58,49],[21,21,20],[33,33,24],[16,16,25],[4,4,5],[24,24,23],[36,36,45],[18,18,27],[6,6,5],[35,35,44],[65,65,74],[46,46,55],[12,12,13]],[[3,3,12],[30,30,39],[32,32,41],[2,2,1],[44,44,43],[46,46,37],[70,70,61],[17,17,26],[42,42,43],[31,31,22],[30,30,31],[49,49,40],[20,20,19],[24,24,15],[25,25,34],[5,5,6],[23,23,22],[45,45,54],[27,27,36],[5,5,4],[44,44,53],[74,74,65],[55,55,64],[13,13,14]],[[12,12,21],[39,39,48],[41,41,50],[1,1,0],[43,43,52],[37,37,28],[61,61,52],[26,26,35],[43,43,34],[22,22,13],[31,31,32],[40,40,31],[19,19,18],[15,15,6],[34,34,43],[6,6,7],[22,22,21],[54,54,63],[36,36,45],[4,4,3],[53,53,62],[65,65,56],[64,64,73],[14,14,15]],[[21,21,30],[48,48,57],[50,50,59],[0,0,1],[52,52,53],[28,28,19],[52,52,51],[35,35,44],[34,34,25],[13,13,4],[32,32,33],[31,31,22],[18,18,19],[6,6,15],[43,43,52],[7,7,8],[21,21,20],[63,63,72],[45,45,54],[3,3,2],[62,62,71],[56,56,47],[73,73,64],[15,15,16]],[[30,30,39],[57,57,66],[59,59,68],[1,1,2],[53,53,52],[19,19,10],[51,51,50],[44,44,53],[25,25,16],[4,4,13],[33,33,34],[22,22,13],[19,19,20],[15,15,24],[52,52,61],[8,8,7],[20,20,19],[72,72,63],[54,54,63],[2,2,1],[71,71,80],[47,47,38],[64,64,55],[16,16,17]],[[39,39,48],[66,66,75],[68,68,77],[2,2,3],[52,52,51],[10,10,1],[50,50,49],[53,53,62],[16,16,7],[13,13,12],[34,34,35],[13,13,14],[20,20,21],[24,24,33],[61,61,70],[7,7,6],[19,19,18],[63,63,54],[63,63,72],[1,1,0],[80,80,71],[38,38,29],[55,55,46],[17,17,16]],[[48,48,57],[75,75,66],[77,77,68],[3,3,4],[51,51,50],[1,1,10],[49,49,48],[62,62,71],[7,7,16],[12,12,11],[35,35,34],[14,14,15],[21,21,22],[33,33,42],[70,70,79],[6,6,5],[18,18,19],[54,54,45],[72,72,63],[0,0,1],[71,71,62],[29,29,20],[46,46,37],[16,16,15]],[[57,57,66],[66,66,57],[68,68,59],[4,4,5],[50,50,49],[10,10,19],[48,48,47],[71,71,80],[16,16,25],[11,11,10],[34,34,33],[15,15,6],[22,22,23],[42,42,51],[79,79,70],[5,5,4],[19,19,20],[45,45,36],[63,63,54],[1,1,2],[62,62,53],[20,20,11],[37,37,28],[15,15,24]],[[66,66,75],[57,57,48],[59,59,50],[5,5,6],[49,49,48],[19,19,28],[47,47,46],[80,80,71],[25,25,34],[10,10,9],[33,33,32],[6,6,15],[23,23,24],[51,51,60],[70,70,61],[4,4,3],[20,20,21],[36,36,27],[54,54,45],[2,2,3],[53,53,44],[11,11,2],[28,28,19],[24,24,33]],[[75,75,66],[48,48,39],[50,50,41],[6,6,7],[48,48,47],[28,28,37],[46,46,45],[71,71,62],[34,34,43],[9,9,10],[32,32,31],[15,15,24],[24,24,25],[60,60,69],[61,61,52],[3,3,2],[21,21,22],[27,27,18],[45,45,36],[3,3,4],[44,44,35],[2,2,11],[19,19,10],[33,33,42]]],"directions":[[1,0,0,3,0,3,0,1,1,1,0,2,3,2,1,2,3,0,0,3,0,2,0,1],[1,0,0,3,0,3,0,1,0,0,0,2,3,2,1,2,3,0,0,3,0,2,0,1],[1,0,0,3,0,3,0,1,0,3,0,2,3,2,0,2,3,0,0,3,0,2,0,2],[1,0,0,3,0,3,0,0,0,3,0,2,3,3,0,2,3,0,0,3,0,2,0,2],[0,0,0,3,0,3,0,0,0,2,0,3,3,3,0,2,3,0,0,3,0,2,0,2],[0,0,0,3,0,3,0,0,0,2,0,3,3,1,0,2,3,0,0,3,0,0,0,2],[0,0,0,2,0,3,1,0,0,2,0,1,2,0,0,2,3,0,0,3,0,0,1,0],[0,0,0,2,0,2,1,0,0,2,0,0,2,0,0,3,3,1,0,3,0,0,1,0],[0,0,0,2,0,2,1,0,0,2,1,0,2,0,0,3,3,1,0,3,1,0,1,0],[0,1,1,2,1,2,2,0,1,2,1,0,2,0,0,3,2,1,1,2,1,3,1,0],[0,1,1,2,1,2,2,0,1,2,1,0,2,0,1,3,2,1,1,2,1,3,1,0],[0,1,1,2,1,2,3,1,1,2,1,0,2,0,1,3,2,1,1,2,1,3,1,0],[1,1,1,2,1,2,3,1,1,3,1,0,2,0,1,3,2,1,1,2,1,3,1,0],[1,1,1,2,1,2,3,1,1,3,1,0,2,0,1,3,2,1,1,2,1,3,1,1],[1,1,1,3,1,2,3,1,1,3,1,3,3,1,1,3,2,1,1,2,1,3,0,2],[1,1,1,3,1,3,3,1,1,3,1,3,3,1,1,2,2,0,1,2,1,2,0,2],[1,1,1,3,1,3,3,1,1,3,0,3,3,1,1,2,2,0,1,2,0,2,0,3],[1,0,0,3,0,3,1,1,0,3,0,3,3,1,1,2,3,0,0,3,0,0,0,3],[1,0,0,3,0,3,1,1,0,3,0,3,3,1,0,2,3,0,0,3,0,0,0,3],[1,0,0,3,0,3,3,0,0,3,2,3,3,1,0,2,3,0,0,3,0,0,0,3],[0,0,0,3,0,3,3,0,0,2,2,2,3,1,0,2,3,0,0,3,0,1,0,3],[0,0,0,3,0,3,2,0,0,2,2,2,3,1,0,2,3,0,0,3,0,1,0,3],[0,0,0,2,0,1,0,0,0,2,2,1,2,0,0,2,3,0,0,3,0,1,1,0],[0,0,0,2,0,1,0,0,0,2,2,1,2,0,0,3,3,1,0,3,0,1,1,1],[0,0,0,2,0,1,0,0,0,2,2,1,2,0,0,3,3,1,0,3,1,1,1,1],[0,1,1,2,1,0,0,0,1,2,3,1,2,0,0,3,2,1,1,2,1,1,1,1],[0,1,1,2,2,0,3,0,1,2,3,1,2,0,1,3,2,1,1,2,1,1,1,1],[0,1,1,2,2,0,2,1,1,2,3,1,2,0,1,3,2,1,1,2,1,1,1,1],[1,1,1,2,2,0,2,1,1,3,3,1,2,0,1,3,2,1,1,2,1,0,1,1],[1,1,1,2,2,0,2,1,1,3,3,0,2,0,1,3,2,1,1,2,1,0,1,1],[1,1,1,3,2,0,2,1,1,3,3,2,3,1,1,3,2,1,1,2,1,0,0,3],[1,1,1,3,2,0,2,1,1,3,3,2,3,1,1,2,2,0,1,2,1,0,0,3],[1,1,1,3,2,0,2,1,1,0,3,1,3,1,1,2,2,0,1,2,0,0,0,2],[1,0,0,3,3,1,2,1,0,0,2,0,3,1,1,2,3,0,0,3,0,0,0,2],[1,0,0,3,1,1,0,1,0,0,2,0,3,1,0,2,3,0,0,3,0,0,0,2],[1,0,0,3,1,1,1,0,0,0,2,0,3,1,0,2,3,0,0,3,0,0,0,2],[0,0,0,3,1,1,1,0,0,0,2,0,3,1,0,2,3,0,0,3,0,1,0,2],[0,0,0,3,3,1,1,0,2,0,2,0,3,1,0,2,3,0,0,3,0,1,0,2],[0,0,0,2,3,1,1,0,3,0,2,0,2,0,0,2,3,0,0,3,0,1,1,2],[0,0,0,2,3,1,1,0,3,1,2,0,2,0,0,3,3,1,0,3,0,1,1,2],[0,0,0,2,3,1,1,0,3,2,2,3,2,0,0,3,3,1,0,3,1,1,1,3],[0,1,1,2,3,0,1,0,3,2,3,3,2,0,0,3,2,1,1,2,1,1,1,3],[0,1,1,2,3,0,1,0,3,2,3,3,2,0,1,3,2,1,1,2,1,1,1,3],[0,1,1,2,3,0,0,1,3,2,3,3,2,0,1,3,2,1,1,2,1,1,1,3],[1,1,1,2,2,0,0,1,3,3,3,2,2,0,1,3,2,1,1,2,1,0,1,3],[1,1,1,2,2,0,0,1,3,3,3,2,2,0,1,3,2,1,1,2,1,0,1,3],[1,1,1,3,2,0,0,1,2,3,3,2,3,1,1,3,2,1,1,2,1,0,0,3],[1,1,1,3,2,0,0,1,2,3,3,2,3,1,1,2,2,0,1,2,1,0,0,3],[1,1,1,3,2,0,0,1,2,1,3,0,3,1,1,2,2,0,1,2,0,0,0,2],[1,0,0,3,2,1,0,1,2,1,2,1,3,1,1,2,3,0,0,3,0,0,0,2],[1,0,0,3,2,1,0,1,2,1,2,1,3,1,0,2,3,0,0,3,0,0,0,2],[1,0,0,3,2,1,1,0,2,1,2,1,3,1,0,2,3,0,0,3,0,0,0,2],[0,0,0,3,3,1,1,0,2,1,2,1,3,1,0,2,3,0,0,3,0,1,0,2],[0,0,0,3,0,1,1,0,1,1,2,1,3,1,0,2,3,0,0,3,0,1,0,2],[0,0,0,2,2,1,3,0,1,1,2,1,2,0,0,2,3,0,0,3,0,1,1,2],[0,0,0,2,3,1,3,0,1,0,2,1,2,0,0,3,3,1,0,3,0,1,1,2],[0,0,0,2,3,1,3,0,1,3,2,2,2,0,0,3,3,1,0,3,1,1,1,3],[0,1,1,2,3,0,3,0,0,3,3,2,2,0,0,3,2,1,1,2,1,1,1,3],[0,1,1,2,3,0,3,0,0,3,3,1,2,0,1,3,2,1,1,2,1,1,1,0],[0,1,1,2,3,0,3,1,0,3,3,0,2,0,1,3,2,1,1,2,1,1,1,0],[1,1,1,2,3,0,3,1,0,2,3,0,2,0,1,3,2,1,1,2,1,0,1,0]],"collisions":[[],[11],[],[],[15],[15],[],[],[51],[],[],[],[],[69],[],[],[47],[],[29],[],[],[28,65],[],[],[],[64],[],[],[],[11],[],[13],[],[70],[],[],[43],[],[],[67],[],[],[],[],[],[],[],[67],[],[],[],[],[43],[52],[],[13],[],[15],[],[]],"space":{"coordinates":[[0.0,0.0],[0.0,1.0],[0.0,2.0],[0.0,3.0],[0.0,4.0],[0.0,5.0],[0.0,6.0],[0.0,7.0],[0.0,8.0],[1.0,0.0],[1.0,1.0],[1.0,2.0],[1.0,3.0],[1.0,4.0],[1.0,5.0],[1.0,6.0],[1.0,7.0],[1.0,8.0],[2.0,0.0],[2.0,1.0],[2.0,2.0],[2.0,3.0],[2.0,4.0],[2.0,5.0],[2.0,6.0],[2.0,7.0],[2.0,8.0],[3.0,0.0],[3.0,1.0],[3.0,2.0],[3.0,3.0],[3.0,4.0],[3.0,5.0],[3.0,6.0],[3.0,7.0],[3.0,8.0],[4.0,0.0],[4.0,1.0],[4.0,2.0],[4.0,3.0],[4.0,4.0],[4.0,5.0],[4.0,6.0],[4.0,7.0],[4.0,8.0],[5.0,0.0],[5.0,1.0],[5.0,2.0],[5.0,3.0],[5.0,4.0],[5.0,5.0],[5.0,6.0],[5.0,7.0],[5.0,8.0],[6.0,0.0],[6.0,1.0],[6.0,2.0],[6.0,3.0],[6.0,4.0],[6.0,5.0],[6.0,6.0],[6.0,7.0],[6.0,8.0],[7.0,0.0],[7.0,1.0],[7.0,2.0],[7.0,3.0],[7.0,4.0],[7.0,5.0],[7.0,6.0],[7.0,7.0],[7.0,8.0],[8.0,0.0],[8.0,1.0],[8.0,2.0],[8.0,3.0],[8.0,4.0],[8.0,5.0],[8.0,6.0],[8.0,7.0],[8.0,8.0]],"edges":[[0,9],[0,1],[1,10],[1,2],[2,11],[2,3],[3,12],[3,4],[4,13],[4,5],[5,14],[5,6],[6,15],[6,7],[7,16],[7,8],[8,17],[9,18],[9,10],[10,19],[10,11],[11,20],[11,12],[12,21],[12,13],[13,22],[13,14],[14,23],[14,15],[15,24],[15,16],[16,25],[16,17],[17,26],[18,27],[18,19],[19,28],[19,20],[20,29],[20,21],[21,30],[21,22],[22,31],[22,23],[23,32],[23,24],[24,33],[24,25],[25,34],[25,26],[26,35],[27,36],[27,28],[28,37],[28,29],[29,38],[29,30],[30,39],[30,31],[31,40],[31,32],[32,41],[32,33],[33,42],[33,34],[34,43],[34,35],[35,44],[36,45],[36,37],[37,46],[37,38],[38,47],[38,39],[39,48],[39,40],[40,49],[40,41],[41,50],[41,42],[42,51],[42,43],[43,52],[43,44],[44,53],[45,54],[45,46],[46,55],[46,47],[47,56],[47,48],[48,57],[48,49],[49,58],[49,50],[50,59],[50,51],[51,60],[51,52],[52,61],[52,53],[53,62],[54,63],[54,55],[55,64],[55,56],[56,65],[56,57],[57,66],[57,58],[58,67],[58,59],[59,68],[59,60],[60,69],[60,61],[61,70],[61,62],[62,71],[63,72],[63,64],[64,73],[64,65],[65,74],[65,66],[66,75],[66,67],[67,76],[67,68],[68,77],[68,69],[69,78],[69,70],[70,79],[70,71],[71,80],[72,73],[73,74],[74,75],[75,76],[76,77],[77,78],[78,79],[79,80]],"box":{"lower":[-0.5,-0.5],"upper":[8.5,8.5]},"spacing":1.0,"neighbors":[[9,0,1,0],[10,1,2,0],[11,2,3,1],[12,3,4,2],[13,4,5,3],[14,5,6,4],[15,6,7,5],[16,7,8,6],[17,8,8,7],[18,0,10,9],[19,1,11,9],[20,2,12,10],[21,3,13,11],[22,4,14,12],[23,5,15,13],[24,6,16,14],[25,7,17,15],[26,8,17,16],[27,9,19,18],[28,10,20,18],[29,11,21,19],[30,12,22,20],[31,13,23,21],[32,14,24,22],[33,15,25,23],[34,16,26,24],[35,17,26,25],[36,18,28,27],[37,19,29,27],[38,20,30,28],[39,21,31,29],[40,22,32,30],[41,23,33,31],[42,24,34,32],[43,25,35,33],[44,26,35,34],[45,27,37,36],[46,28,38,36],[47,29,39,37],[48,30,40,38],[49,31,41,39],[50,32,42,40],[51,33,43,41],[52,34,44,42],[53,35,44,43],[54,36,46,45],[55,37,47,45],[56,38,48,46],[57,39,49,47],[58,40,50,48],[59,41,51,49],[60,42,52,50],[61,43,53,51],[62,44,53,52],[63,45,55,54],[64,46,56,54],[65,47,57,55],[66,48,58,56],[67,49,59,57],[68,50,60,58],[69,51,61,59],[70,52,62,60],[71,53,62,61],[72,54,64,63],[73,55,65,63],[74,56,66,64],[75,57,67,65],[76,58,68,66],[77,59,69,67],[78,60,70,68],[79,61,71,69],[80,62,71,70],[72,63,73,72],[73,64,74,72],[74,65,75,73],[75,66,76,74],[76,67,77,75],[77,68,78,76],[78,69,79,77],[79,70,80,78],[80,71,80,79]]}},"measured":{"mean_squared_step":1.0,"diffusion":0.05555555555555556,"drift":[0.03333333333333333,-0.005555555555555555],"wall_rate":1.0,"occupied_final":23,"collisions":20,"blocked_rate":0.0},"predicted":{"diffusion":[0.0,0.0],"drift":[0.0,0.0],"hops":0}}</script>
+<script>
+// imigraph visualisation helpers: canvas drawing of trajectories and graph states, plus a
+// frame player. Inlined into the generated HTML report and served to the Pyodide GUI.
+(function (global) {
+  "use strict";
+
+  const COLORS = {
+    reference: "#2563eb",
+    candidate: "#dc2626",
+    space: "#9ca3af",
+    edge: "#d1d5db",
+    walker: "#dc2626",
+    walkerEdge: "#f87171",
+    box: "#374151",
+  };
+
+  // Maps box coordinates to canvas pixels (y grows upward in the box, downward on canvas).
+  function Viewport(canvas, box, margin) {
+    margin = margin === undefined ? 10 : margin;
+    const ctx = canvas.getContext("2d");
+    const span = [box.upper[0] - box.lower[0], box.upper[1] - box.lower[1]];
+    const scale = Math.min(
+      (canvas.width - 2 * margin) / span[0],
+      (canvas.height - 2 * margin) / span[1]
+    );
+    const offset = [
+      (canvas.width - scale * span[0]) / 2,
+      (canvas.height - scale * span[1]) / 2,
+    ];
+    return {
+      ctx: ctx,
+      scale: scale,
+      x: function (v) { return offset[0] + (v - box.lower[0]) * scale; },
+      y: function (v) { return canvas.height - offset[1] - (v - box.lower[1]) * scale; },
+      // Inverse maps (canvas pixels to box coordinates), for clicks on the canvas.
+      invX: function (px) { return box.lower[0] + (px - offset[0]) / scale; },
+      invY: function (py) { return box.lower[1] + (canvas.height - offset[1] - py) / scale; },
+      // Box coordinates of a mouse event on this canvas (CSS size may differ from the pixel size).
+      pointOf: function (event) {
+        const rect = canvas.getBoundingClientRect();
+        const px = (event.clientX - rect.left) * canvas.width / rect.width;
+        const py = (event.clientY - rect.top) * canvas.height / rect.height;
+        return [box.lower[0] + (px - offset[0]) / scale, box.lower[1] + (canvas.height - offset[1] - py) / scale];
+      },
+      clear: function () {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.strokeStyle = COLORS.box;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(offset[0], offset[1], scale * span[0], scale * span[1]);
+      },
+    };
+  }
+
+  function drawParticles(vp, positions, color, radius) {
+    const ctx = vp.ctx;
+    ctx.fillStyle = color;
+    for (let i = 0; i < positions.length; i++) {
+      ctx.beginPath();
+      ctx.arc(vp.x(positions[i][0]), vp.y(positions[i][1]), radius, 0, 2 * Math.PI);
+      ctx.fill();
+    }
+  }
+
+  // `maxLength` (box units, optional) hides the wrap-around edges of a periodic lattice.
+  function drawSpace(vp, coordinates, edges, nodeRadius, maxLength) {
+    const ctx = vp.ctx;
+    ctx.strokeStyle = COLORS.edge;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let e = 0; e < edges.length; e++) {
+      const a = coordinates[edges[e][0]];
+      const b = coordinates[edges[e][1]];
+      if (maxLength && Math.hypot(a[0] - b[0], a[1] - b[1]) > maxLength) continue;
+      ctx.moveTo(vp.x(a[0]), vp.y(a[1]));
+      ctx.lineTo(vp.x(b[0]), vp.y(b[1]));
+    }
+    ctx.stroke();
+    drawParticles(vp, coordinates, COLORS.space, nodeRadius);
+  }
+
+  // Lattice-gas walkers: an arrow from the site in the walker's direction (its heading edge).
+  function drawArrows(vp, coordinates, sites, directions, spacing, color) {
+    const ctx = vp.ctx;
+    const len = 0.42 * spacing;
+    const head = Math.max(4, 0.12 * spacing * vp.scale);
+    ctx.strokeStyle = color || COLORS.walker;
+    ctx.fillStyle = color || COLORS.walker;
+    ctx.lineWidth = 2;
+    for (let w = 0; w < sites.length; w++) {
+      const a = coordinates[sites[w]];
+      const d = LOOP_DIRECTIONS[directions[w]];
+      const x0 = vp.x(a[0]), y0 = vp.y(a[1]);
+      const x1 = vp.x(a[0] + len * d[0]), y1 = vp.y(a[1] + len * d[1]);
+      ctx.beginPath();
+      ctx.moveTo(x0, y0);
+      ctx.lineTo(x1, y1);
+      ctx.stroke();
+      const angle = Math.atan2(y1 - y0, x1 - x0);
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x1 - head * Math.cos(angle - 0.5), y1 - head * Math.sin(angle - 0.5));
+      ctx.lineTo(x1 - head * Math.cos(angle + 0.5), y1 - head * Math.sin(angle + 0.5));
+      ctx.closePath();
+      ctx.fill();
+    }
+  }
+
+  // Rings around the sites where a Collide rule fired in this step.
+  function drawCollisionMarks(vp, coordinates, sites, spacing) {
+    const ctx = vp.ctx;
+    ctx.strokeStyle = "#f59e0b";
+    ctx.lineWidth = 3;
+    for (let i = 0; i < sites.length; i++) {
+      const a = coordinates[sites[i]];
+      ctx.beginPath();
+      ctx.arc(vp.x(a[0]), vp.y(a[1]), 0.3 * spacing * vp.scale, 0, 2 * Math.PI);
+      ctx.stroke();
+    }
+  }
+
+  // Walker nodes are drawn next to their anchor node, joined by their edge; several walkers on
+  // one node fan out around it.
+  function drawWalkers(vp, coordinates, anchors, spacing) {
+    const ctx = vp.ctx;
+    const seen = {};
+    const r = 0.32 * spacing;
+    for (let w = 0; w < anchors.length; w++) {
+      const node = anchors[w];
+      const k = seen[node] || 0;
+      seen[node] = k + 1;
+      const angle = Math.PI / 4 + k * (2 * Math.PI / 5);
+      const a = coordinates[node];
+      const px = vp.x(a[0] + r * Math.cos(angle));
+      const py = vp.y(a[1] + r * Math.sin(angle));
+      ctx.strokeStyle = COLORS.walkerEdge;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(vp.x(a[0]), vp.y(a[1]));
+      ctx.lineTo(px, py);
+      ctx.stroke();
+      ctx.fillStyle = COLORS.walker;
+      ctx.beginPath();
+      ctx.arc(px, py, Math.max(3, 0.14 * spacing * vp.scale), 0, 2 * Math.PI);
+      ctx.fill();
+    }
+  }
+
+  // Neighbour-table order of SquareLattice: +x, -x, +y, -y. A self-loop replaces a missing
+  // neighbour and is drawn as a small loop pointing out of the lattice in that direction.
+  const LOOP_DIRECTIONS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+
+  // Draws the edge from site `from` to site `to` (a loop drawn beside the site when equal).
+  function strokeEdge(vp, coords, neighbors, spacing, from, to, color, width) {
+    const ctx = vp.ctx;
+    const s = coords[from];
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.beginPath();
+    if (from === to) {
+      const k = Math.max(0, neighbors[from].indexOf(from));
+      const d = LOOP_DIRECTIONS[k];
+      ctx.arc(vp.x(s[0] + 0.28 * spacing * d[0]), vp.y(s[1] + 0.28 * spacing * d[1]),
+              0.18 * spacing * vp.scale, 0, 2 * Math.PI);
+    } else {
+      const t = coords[to];
+      ctx.moveTo(vp.x(s[0]), vp.y(s[1]));
+      ctx.lineTo(vp.x(t[0]), vp.y(t[1]));
+    }
+    ctx.stroke();
+  }
+
+  // One application of a chain rule on a small space, in four phases: 0 state, 1 match (every
+  // labelled edge at the anchor is a candidate for the first chain edge, yellow), 2 choose (the
+  // matched chain, orange), 3 rewrite (the walker edge now ends at the chain's target site).
+  // `path` is the matched chain [s0, s1, ..., sk]; `target` the walker's new site.
+  // `space` needs coordinates, edges, neighbors, spacing.
+  function drawRuleStep(vp, space, path, target, phase) {
+    const coords = space.coordinates;
+    const spacing = space.spacing;
+    const nbrs = space.neighbors;
+    drawSpace(vp, coords, space.edges, Math.max(4, 0.1 * spacing * vp.scale), 1.5 * spacing);
+    const anchor = path[0];
+    if (phase === 1) {
+      for (let k = 0; k < nbrs[anchor].length; k++) {
+        strokeEdge(vp, coords, nbrs, spacing, anchor, nbrs[anchor][k], "#fbbf24", 4);
+        if (nbrs[anchor][k] === anchor) {  // loops: draw at their own direction
+          const d = LOOP_DIRECTIONS[k], s = coords[anchor], ctx = vp.ctx;
+          ctx.beginPath();
+          ctx.arc(vp.x(s[0] + 0.28 * spacing * d[0]), vp.y(s[1] + 0.28 * spacing * d[1]),
+                  0.18 * spacing * vp.scale, 0, 2 * Math.PI);
+          ctx.stroke();
+        }
+      }
+    } else if (phase === 2) {
+      for (let i = 1; i < path.length; i++) {
+        strokeEdge(vp, coords, nbrs, spacing, path[i - 1], path[i], "#f59e0b", 5);
+      }
+    }
+    drawWalkers(vp, coords, [phase === 3 ? target : anchor], spacing);
+  }
+
+  const RULE_PHASES = [
+    "state: walker w (red) is anchored at space node s by one edge",
+    "match: every labelled edge at s is a candidate for the first chain edge (yellow); a self-loop counts",
+    "choose: the chain is drawn with the rule's direction weights (orange)",
+    "rewrite: {w,s} is replaced by the walker edge to the chain's target site; the space edges stay",
+  ];
+
+  // Plays frames 0..count-1, calling draw(frame) and keeping slider/label in sync.
+  function Player(count, draw, controls) {
+    let frame = 0;
+    let timer = null;
+    let interval = controls.interval || 80;
+    function show(f) {
+      frame = ((f % count) + count) % count;
+      if (controls.slider) controls.slider.value = frame;
+      if (controls.label) controls.label.textContent = controls.labelFor ? controls.labelFor(frame) : String(frame);
+      draw(frame);
+    }
+    function play() {
+      if (timer) return;
+      timer = setInterval(function () { show(frame + 1); }, interval);
+      if (controls.button) controls.button.textContent = "Pause";
+    }
+    function pause() {
+      if (timer) clearInterval(timer);
+      timer = null;
+      if (controls.button) controls.button.textContent = "Play";
+    }
+    // Playback speed: `factor` scales the player's own interval (1 = as authored, 2 = twice as fast).
+    function setSpeed(factor) {
+      interval = Math.max(10, (controls.interval || 80) / factor);
+      if (timer) { pause(); play(); }
+    }
+    if (controls.slider) {
+      controls.slider.min = 0;
+      controls.slider.max = count - 1;
+      controls.slider.addEventListener("input", function () { pause(); show(Number(controls.slider.value)); });
+    }
+    if (controls.button) {
+      controls.button.addEventListener("click", function () { if (timer) pause(); else play(); });
+    }
+    show(0);
+    return { play: play, pause: pause, show: show, setSpeed: setSpeed };
+  }
+
+  // Wires a range input (value = speed factor) to a list of players.
+  function speedControl(input, label, players) {
+    function apply() {
+      const factor = Number(input.value);
+      if (label) label.textContent = factor + "x";
+      players.forEach(function (p) { p.setSpeed(factor); });
+    }
+    input.addEventListener("input", apply);
+    apply();
+  }
+
+  global.imigraphViz = {
+    COLORS: COLORS,
+    LOOP_DIRECTIONS: LOOP_DIRECTIONS,
+    Viewport: Viewport,
+    drawParticles: drawParticles,
+    drawSpace: drawSpace,
+    drawWalkers: drawWalkers,
+    drawArrows: drawArrows,
+    drawCollisionMarks: drawCollisionMarks,
+    drawRuleStep: drawRuleStep,
+    RULE_PHASES: RULE_PHASES,
+    Player: Player,
+    speedControl: speedControl,
+  };
+})(typeof window !== "undefined" ? window : globalThis);
+
+</script>
+<script>
+(function () {
+  const data = JSON.parse(document.getElementById("data").textContent);
+  const V = window.imigraphViz;
+  const byId = function (id) { return document.getElementById(id); };
+  const demo = data.demo;
+  const players = [];
+
+  const universe = V.Viewport(byId("universe-canvas"), demo.space.box, 24);
+  universe.clear();
+  V.drawSpace(universe, demo.space.coordinates, demo.space.edges, 4, 1.5 * demo.space.spacing);
+  if (demo.directions) V.drawArrows(universe, demo.space.coordinates, demo.anchors[0], demo.directions[0], demo.space.spacing);
+  else V.drawWalkers(universe, demo.space.coordinates, demo.anchors[0], demo.space.spacing);
+
+  const rule = V.Viewport(byId("rule-canvas"), demo.space.box, 30);
+  const steps = demo.times.length - 1;
+  players.push(V.Player(steps * 4, function (f) {
+    const step = Math.floor(f / 4), phase = f % 4;
+    rule.clear();
+    V.drawRuleStep(rule, demo.space, demo.paths[step][0], demo.anchors[step + 1][0], phase);
+    byId("rule-phase").textContent = V.RULE_PHASES[phase];
+  }, { slider: byId("rule-slider"), button: byId("rule-play"), label: byId("rule-label"),
+       labelFor: function (f) { return "step " + Math.floor(f / 4) + "." + (f % 4); }, interval: 700 }));
+
+  const world = V.Viewport(byId("demo-canvas"), demo.space.box, 24);
+  players.push(V.Player(demo.times.length, function (f) {
+    world.clear();
+    V.drawSpace(world, demo.space.coordinates, demo.space.edges, 4, 1.5 * demo.space.spacing);
+    if (demo.collisions && f > 0) V.drawCollisionMarks(world, demo.space.coordinates, demo.collisions[f - 1], demo.space.spacing);
+    if (demo.directions) V.drawArrows(world, demo.space.coordinates, demo.anchors[f], demo.directions[f], demo.space.spacing);
+    else V.drawWalkers(world, demo.space.coordinates, demo.anchors[f], demo.space.spacing);
+  }, { slider: byId("demo-slider"), button: byId("demo-play"), label: byId("demo-label"),
+       labelFor: function (f) { return "step " + f; }, interval: 500 }));
+  V.speedControl(byId("speed"), byId("speed-label"), players);
+})();
+</script>
+</body>
+</html>
