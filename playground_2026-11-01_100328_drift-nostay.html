@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>imigraph playground: Drift + NoStay</title>
+<style>
+:root {
+  --text: #111827;
+  --muted: #6b7280;
+  --border: #e5e7eb;
+  --bg: #f9fafb;
+  --card: #ffffff;
+  --pass: #15803d;
+  --fail: #b91c1c;
+  --reference: #2563eb;
+  --candidate: #dc2626;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 24px 16px 48px;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+main { max-width: 1120px; margin: 0 auto; }
+h1 { font-size: 26px; margin: 0 0 4px; }
+h2 { font-size: 20px; margin: 32px 0 8px; }
+h3 { font-size: 16px; margin: 16px 0 6px; }
+p { margin: 6px 0 10px; max-width: 80ch; }
+code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.92em; }
+.muted { color: var(--muted); }
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px 18px;
+  margin: 12px 0;
+}
+.row { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
+.row > * { flex: 1 1 320px; min-width: 0; }
+.badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-weight: 600;
+  color: white;
+}
+.badge.pass { background: var(--pass); }
+.badge.fail { background: var(--fail); }
+canvas { width: 100%; height: auto; border: 1px solid var(--border); border-radius: 6px; background: white; }
+.controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 8px 0; }
+.controls label { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.controls label input[type="range"] { width: 90px; flex: none; }
+.controls input[type="range"] { flex: 1; }
+.controls button { padding: 4px 14px; border: 1px solid var(--border); border-radius: 6px; background: white; cursor: pointer; }
+.controls .label { min-width: 9ch; font-variant-numeric: tabular-nums; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+th { color: var(--muted); font-weight: 600; }
+td.pass { color: var(--pass); font-weight: 600; }
+td.fail { color: var(--fail); font-weight: 600; }
+svg.chart { max-width: 100%; height: auto; }
+svg.heatmap { width: 220px; height: 220px; }
+.heatmap-block { flex: 0 0 auto; }
+.legend-ref { color: var(--reference); font-weight: 600; }
+.legend-cand { color: var(--candidate); font-weight: 600; }
+
+/* Phones: tables scroll sideways instead of breaking the layout, cards and type get tighter,
+   charts and canvases already scale to the column width. */
+.table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+@media (max-width: 640px) {
+  body { padding: 12px 10px 32px; font-size: 14px; }
+  h1 { font-size: 20px; }
+  h2 { font-size: 17px; margin-top: 22px; }
+  .card { padding: 10px 10px; border-radius: 8px; }
+  .row { gap: 10px; }
+  .row > * { flex-basis: 100%; }
+  table { font-size: 12px; }
+  th, td { padding: 4px 5px; }
+  .controls { gap: 6px; }
+  .controls .label { min-width: 7ch; font-size: 13px; }
+  svg.heatmap { width: 150px; height: 150px; }
+  pre { font-size: 11px; overflow-x: auto; }
+}
+svg.pattern { width: 326px; height: auto; vertical-align: middle; }
+td.pattern { min-width: 336px; }
+
+table.kv th { width: 55%; }
+pre.request { white-space: pre-wrap; font-size: 12px; background: var(--bg); padding: 8px; border-radius: 6px; }
+</style>
+</head>
+<body>
+<main>
+<h1>imigraph playground: Drift + NoStay</h1>
+<p class="muted">Generated 2026-11-01 10:03 UTC with the rule editor of the imigraph GUI (or <code>python -m imigraph
+playground-report</code>). A small world, a starting universe and a set of 2 rule(s) applied in order in every
+step; the page keeps every state and every matched chain of the run, and compares what was measured with what the
+rules predict.</p>
+
+<h2>1. The rules</h2>
+<div class="card">
+<p>Each rule is an edge rewrite in the notation <code>{w,s}, {s,t} &rarr; {w,t}, {s,t}</code>: a walker edge plus a chain
+of site edges on the left, the walker re-attached to a site of the chain on the right. The pattern drawings show the
+variables as nodes (sites grey, walkers red) and the edges of each side. Direction weights (+x, &minus;x, +y, &minus;y)
+and the self-loop policy of every rule are in the <em>choice</em> and <em>matches</em> columns.</p>
+<div class="table-scroll"><table><thead><tr><th>rule</th><th>rewrite</th><th>matches</th><th>choice</th><th>invariants</th><th>physics</th><th>pattern</th></tr></thead><tbody><tr><th>Drift</th><td><code>{w,s}, {s,t} -&gt; {w,t}, {s,t}</code></td><td>one labelled edge per chain edge (1 chain edge from the anchor of w); self-loops {s,s} included (a walker at the wall may stay)</td><td>directions drawn with weights +x 0.55, -x 0.15, +y 0.15, -y 0.15; all walkers rewritten at once</td><td>number of walkers, one anchoring edge per walker, the space graph</td><td>1 hop per application: D = (0.27, 0.15), drift v = (0.4, 0) for a = 1, tau = 1</td><td class="pattern"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 326 80" width="326" height="80" class="pattern" role="img">
+<rect width="326" height="80" fill="white" rx="6"/>
+<line x1="75.0" y1="20.8" x2="89.0" y2="20.8" stroke="#f87171" stroke-width="2"/>
+<circle cx="89.0" cy="9.8" r="7" fill="none" stroke="#f87171" stroke-width="1.5"/>
+<circle cx="75.0" cy="20.8" r="7" fill="#dc2626"/><text x="75.0" y="24.3" font-size="9" fill="white" text-anchor="middle" font-family="ui-monospace, monospace">w</text>
+<circle cx="89.0" cy="20.8" r="7" fill="#dc2626"/><text x="89.0" y="24.3" font-size="9" fill="white" text-anchor="middle" font-family="ui-monospace, monospace">s</text>
+<circle cx="89.0" cy="20.8" r="7" fill="#dc2626"/><text x="89.0" y="24.3" font-size="9" fill="white" text-anchor="middle" font-family="ui-monospace, monospace">t</text>
+<line x1="251.0" y1="20.8" x2="265.0" y2="20.8" stroke="#f87171" stroke-width="2"/>
+<circle cx="265.0" cy="9.8" r="7" fill="none" stroke="#f87171" stroke-width="1.5"/>
+<circle cx="251.0" cy="20.8" r="7" fill="#dc2626"/><text x="251.0" y="24.3" font-size="9" fill="white" text-anchor="middle" font-family="ui-monospace, monospace">w</text>
+<circle cx="265.0" cy="20.8" r="7" fill="#dc2626"/><text x="265.0" y="24.3" font-size="9" fill="white" text-anchor="middle" font-family="ui-monospace, monospace">s</text>
+<circle cx="265.0" cy="20.8" r="7" fill="#dc2626"/><text x="265.0" y="24.3" font-size="9" fill="white" text-anchor="middle" font-family="ui-monospace, monospace">t</text>
+<path d="M 155.0 40.0 h 14 m -4 -4 l 4 4 l -4 4" fill="none" stroke="#374151" stroke-width="1.5"/>
+</svg></td></tr><tr><th>NoStay</th><td><code>{w,s}, {s,t} -&gt; {w,t}, {s,t}</code></td><td>one labelled edge per chain edge (1 chain edge from the anchor of w); self-loops excluded (a walker at the wall must move)</td><td>directions drawn with weights +x 0.25, -x 0.25, +y 0.25, -y 0.25; all walkers rewritten at once</td><td>number of walkers, one anchoring edge per walker, the space graph</td><td>1 hop per application: D = (0.25, 0.25), drift v = (0, 0) for a = 1, tau = 1</td><td class="pattern"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 326 80" width="326" height="80" class="pattern" role="img">
+<rect width="326" height="80" fill="white" rx="6"/>
+<line x1="75.0" y1="20.8" x2="89.0" y2="20.8" stroke="#f87171" stroke-width="2"/>
+<circle cx="89.0" cy="9.8" r="7" fill="none" stroke="#f87171" stroke-width="1.5"/>
+<circle cx="75.0" cy="20.8" r="7" fill="#dc2626"/><text x="75.0" y="24.3" font-size="9" fill="white" text-anchor="middle" font-family="ui-monospace, monospace">w</text>
+<circle cx="89.0" cy="20.8" r="7" fill="#dc2626"/><text x="89.0" y="24.3" font-size="9" fill="white" text-anchor="middle" font-family="ui-monospace, monospace">s</text>
+<circle cx="89.0" cy="20.8" r="7" fill="#dc2626"/><text x="89.0" y="24.3" font-size="9" fill="white" text-anchor="middle" font-family="ui-monospace, monospace">t</text>
+<line x1="251.0" y1="20.8" x2="265.0" y2="20.8" stroke="#f87171" stroke-width="2"/>
+<circle cx="265.0" cy="9.8" r="7" fill="none" stroke="#f87171" stroke-width="1.5"/>
+<circle cx="251.0" cy="20.8" r="7" fill="#dc2626"/><text x="251.0" y="24.3" font-size="9" fill="white" text-anchor="middle" font-family="ui-monospace, monospace">w</text>
+<circle cx="265.0" cy="20.8" r="7" fill="#dc2626"/><text x="265.0" y="24.3" font-size="9" fill="white" text-anchor="middle" font-family="ui-monospace, monospace">s</text>
+<circle cx="265.0" cy="20.8" r="7" fill="#dc2626"/><text x="265.0" y="24.3" font-size="9" fill="white" text-anchor="middle" font-family="ui-monospace, monospace">t</text>
+<path d="M 155.0 40.0 h 14 m -4 -4 l 4 4 l -4 4" fill="none" stroke="#374151" stroke-width="1.5"/>
+</svg></td></tr><tr><th>Drift + NoStay</th><td><code>{w,s}, {s,t} -&gt; {w,t}, {s,t} ; {w,s}, {s,t} -&gt; {w,t}, {s,t}</code></td><td>2 rules applied in order in every step (Drift, NoStay); each one matches on the state the previous one produced</td><td>each rule draws its directions independently; all walkers rewritten at once by every rule</td><td>number of walkers, one anchoring edge per walker, the space graph</td><td>2 hops per step in total; drifts and diffusions add up: D = (0.52, 0.4), drift v = (0.4, 0) for a = 1, tau = 1</td><td class="pattern"></td></tr></tbody></table></div>
+</div>
+
+<h2>2. The starting universe</h2>
+<div class="card">
+<div class="row">
+<div><table class="kv"><tbody><tr><th>world</th><td>9 x 9 square lattice</td></tr><tr><th>walls</th><td>reflecting</td></tr><tr><th>walkers</th><td>6</td></tr><tr><th>placement</th><td>left</td></tr><tr><th>starting sites (node indices)</th><td>16, 26, 29, 29, 7, 3</td></tr><tr><th>steps</th><td>60</td></tr><tr><th>seed</th><td>1</td></tr><tr><th>spacing a / step time tau</th><td>1 / 1</td></tr></tbody></table></div>
+<div>
+<p class="muted">The world at step 0: space nodes (grey) with their edges, walkers (red) attached to their starting sites.</p>
+<canvas id="universe-canvas" width="400" height="400"></canvas>
+</div>
+</div>
+</div>
+
+<h2>3. The run</h2>
+<div class="card">
+<div class="row">
+<div>
+<p class="muted">The rule set, one application in four phases (state, match, choose, rewrite) for walker 0.</p>
+<canvas id="rule-canvas" width="520" height="520"></canvas>
+<div class="controls"><button id="rule-play">Play</button><input id="rule-slider" type="range"><span id="rule-label" class="label"></span></div>
+<p id="rule-phase" class="muted"></p>
+</div>
+<div>
+<p class="muted">The graph, step by step: all walkers on the small world.</p>
+<canvas id="demo-canvas" width="520" height="520"></canvas>
+<div class="controls"><button id="demo-play">Play</button><input id="demo-slider" type="range"><span id="demo-label" class="label"></span></div>
+<label class="muted">playback speed <input id="speed" type="range" min="0.25" max="4" step="0.25" value="1"><span id="speed-label"></span></label>
+</div>
+</div>
+</div>
+
+<h2>4. Measured against the prediction</h2>
+<div class="card">
+<table class="kv"><tbody><tr><th>mean |dr|^2 per step (a^2)</th><td>1.706</td></tr><tr><th>diffusion D measured / predicted (x, y)</th><td>0.212 / 0.520, 0.400</td></tr><tr><th>drift v measured / predicted</th><td>(0.103, -0.025) / (0.400, 0.000)</td></tr><tr><th>hops per step (predicted)</th><td>2</td></tr><tr><th>wall rate (fraction of walkers per step)</th><td>0.206</td></tr><tr><th>occupied sites at the end</th><td>5</td></tr></tbody></table>
+<p class="muted">Few walkers and walls make the measured values noisy; the prediction holds far from the walls, for many
+walkers and many steps. A rule with a drift or more hops per step is meant to differ from the uniform random hop.</p>
+</div>
+
+<h2>5. Reproduce</h2>
+<div class="card">
+<p class="muted">The session as the GUI exports it. Save it as <code>session.json</code> and run
+<code>python -m imigraph playground-report --request-file session.json --label &lt;name&gt;</code>, or import it in the GUI.</p>
+<pre class="request">{
+  &quot;size&quot;: 9,
+  &quot;walls&quot;: &quot;reflecting&quot;,
+  &quot;walkers&quot;: 6,
+  &quot;placement&quot;: &quot;left&quot;,
+  &quot;steps&quot;: 60,
+  &quot;seed&quot;: 1,
+  &quot;rule&quot;: [
+    {
+      &quot;name&quot;: &quot;Drift&quot;,
+      &quot;notation&quot;: &quot;{w,s}, {s,t} -&gt; {w,t}, {s,t}&quot;,
+      &quot;weights&quot;: [
+        0.55,
+        0.15,
+        0.15,
+        0.15
+      ],
+      &quot;self_loops&quot;: &quot;allow&quot;
+    },
+    {
+      &quot;name&quot;: &quot;NoStay&quot;,
+      &quot;notation&quot;: &quot;{w,s}, {s,t} -&gt; {w,t}, {s,t}&quot;,
+      &quot;weights&quot;: [
+        0.25,
+        0.25,
+        0.25,
+        0.25
+      ],
+      &quot;self_loops&quot;: &quot;forbid&quot;
+    }
+  ]
+}</pre>
+</div>
+</main>
+
+<script id="data" type="application/json">{"error":null,"rule":{"name":"Drift + NoStay","rewrite":"{w,s}, {s,t} -> {w,t}, {s,t} ; {w,s}, {s,t} -> {w,t}, {s,t}","matches":"2 rules applied in order in every step (Drift, NoStay); each one matches on the state the previous one produced","choice":"each rule draws its directions independently; all walkers rewritten at once by every rule","invariants":"number of walkers, one anchoring edge per walker, the space graph","physics":"2 hops per step in total; drifts and diffusions add up: D = (0.52, 0.4), drift v = (0.4, 0) for a = 1, tau = 1"},"rules":[{"name":"Drift","rewrite":"{w,s}, {s,t} -> {w,t}, {s,t}","matches":"one labelled edge per chain edge (1 chain edge from the anchor of w); self-loops {s,s} included (a walker at the wall may stay)","choice":"directions drawn with weights +x 0.55, -x 0.15, +y 0.15, -y 0.15; all walkers rewritten at once","invariants":"number of walkers, one anchoring edge per walker, the space graph","physics":"1 hop per application: D = (0.27, 0.15), drift v = (0.4, 0) for a = 1, tau = 1","pattern":"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 326 80\" width=\"326\" height=\"80\" class=\"pattern\" role=\"img\">\n<rect width=\"326\" height=\"80\" fill=\"white\" rx=\"6\"/>\n<line x1=\"75.0\" y1=\"20.8\" x2=\"89.0\" y2=\"20.8\" stroke=\"#f87171\" stroke-width=\"2\"/>\n<circle cx=\"89.0\" cy=\"9.8\" r=\"7\" fill=\"none\" stroke=\"#f87171\" stroke-width=\"1.5\"/>\n<circle cx=\"75.0\" cy=\"20.8\" r=\"7\" fill=\"#dc2626\"/><text x=\"75.0\" y=\"24.3\" font-size=\"9\" fill=\"white\" text-anchor=\"middle\" font-family=\"ui-monospace, monospace\">w</text>\n<circle cx=\"89.0\" cy=\"20.8\" r=\"7\" fill=\"#dc2626\"/><text x=\"89.0\" y=\"24.3\" font-size=\"9\" fill=\"white\" text-anchor=\"middle\" font-family=\"ui-monospace, monospace\">s</text>\n<circle cx=\"89.0\" cy=\"20.8\" r=\"7\" fill=\"#dc2626\"/><text x=\"89.0\" y=\"24.3\" font-size=\"9\" fill=\"white\" text-anchor=\"middle\" font-family=\"ui-monospace, monospace\">t</text>\n<line x1=\"251.0\" y1=\"20.8\" x2=\"265.0\" y2=\"20.8\" stroke=\"#f87171\" stroke-width=\"2\"/>\n<circle cx=\"265.0\" cy=\"9.8\" r=\"7\" fill=\"none\" stroke=\"#f87171\" stroke-width=\"1.5\"/>\n<circle cx=\"251.0\" cy=\"20.8\" r=\"7\" fill=\"#dc2626\"/><text x=\"251.0\" y=\"24.3\" font-size=\"9\" fill=\"white\" text-anchor=\"middle\" font-family=\"ui-monospace, monospace\">w</text>\n<circle cx=\"265.0\" cy=\"20.8\" r=\"7\" fill=\"#dc2626\"/><text x=\"265.0\" y=\"24.3\" font-size=\"9\" fill=\"white\" text-anchor=\"middle\" font-family=\"ui-monospace, monospace\">s</text>\n<circle cx=\"265.0\" cy=\"20.8\" r=\"7\" fill=\"#dc2626\"/><text x=\"265.0\" y=\"24.3\" font-size=\"9\" fill=\"white\" text-anchor=\"middle\" font-family=\"ui-monospace, monospace\">t</text>\n<path d=\"M 155.0 40.0 h 14 m -4 -4 l 4 4 l -4 4\" fill=\"none\" stroke=\"#374151\" stroke-width=\"1.5\"/>\n</svg>"},{"name":"NoStay","rewrite":"{w,s}, {s,t} -> {w,t}, {s,t}","matches":"one labelled edge per chain edge (1 chain edge from the anchor of w); self-loops excluded (a walker at the wall must move)","choice":"directions drawn with weights +x 0.25, -x 0.25, +y 0.25, -y 0.25; all walkers rewritten at once","invariants":"number of walkers, one anchoring edge per walker, the space graph","physics":"1 hop per application: D = (0.25, 0.25), drift v = (0, 0) for a = 1, tau = 1","pattern":"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 326 80\" width=\"326\" height=\"80\" class=\"pattern\" role=\"img\">\n<rect width=\"326\" height=\"80\" fill=\"white\" rx=\"6\"/>\n<line x1=\"75.0\" y1=\"20.8\" x2=\"89.0\" y2=\"20.8\" stroke=\"#f87171\" stroke-width=\"2\"/>\n<circle cx=\"89.0\" cy=\"9.8\" r=\"7\" fill=\"none\" stroke=\"#f87171\" stroke-width=\"1.5\"/>\n<circle cx=\"75.0\" cy=\"20.8\" r=\"7\" fill=\"#dc2626\"/><text x=\"75.0\" y=\"24.3\" font-size=\"9\" fill=\"white\" text-anchor=\"middle\" font-family=\"ui-monospace, monospace\">w</text>\n<circle cx=\"89.0\" cy=\"20.8\" r=\"7\" fill=\"#dc2626\"/><text x=\"89.0\" y=\"24.3\" font-size=\"9\" fill=\"white\" text-anchor=\"middle\" font-family=\"ui-monospace, monospace\">s</text>\n<circle cx=\"89.0\" cy=\"20.8\" r=\"7\" fill=\"#dc2626\"/><text x=\"89.0\" y=\"24.3\" font-size=\"9\" fill=\"white\" text-anchor=\"middle\" font-family=\"ui-monospace, monospace\">t</text>\n<line x1=\"251.0\" y1=\"20.8\" x2=\"265.0\" y2=\"20.8\" stroke=\"#f87171\" stroke-width=\"2\"/>\n<circle cx=\"265.0\" cy=\"9.8\" r=\"7\" fill=\"none\" stroke=\"#f87171\" stroke-width=\"1.5\"/>\n<circle cx=\"251.0\" cy=\"20.8\" r=\"7\" fill=\"#dc2626\"/><text x=\"251.0\" y=\"24.3\" font-size=\"9\" fill=\"white\" text-anchor=\"middle\" font-family=\"ui-monospace, monospace\">w</text>\n<circle cx=\"265.0\" cy=\"20.8\" r=\"7\" fill=\"#dc2626\"/><text x=\"265.0\" y=\"24.3\" font-size=\"9\" fill=\"white\" text-anchor=\"middle\" font-family=\"ui-monospace, monospace\">s</text>\n<circle cx=\"265.0\" cy=\"20.8\" r=\"7\" fill=\"#dc2626\"/><text x=\"265.0\" y=\"24.3\" font-size=\"9\" fill=\"white\" text-anchor=\"middle\" font-family=\"ui-monospace, monospace\">t</text>\n<path d=\"M 155.0 40.0 h 14 m -4 -4 l 4 4 l -4 4\" fill=\"none\" stroke=\"#374151\" stroke-width=\"1.5\"/>\n</svg>"},{"name":"Drift + NoStay","rewrite":"{w,s}, {s,t} -> {w,t}, {s,t} ; {w,s}, {s,t} -> {w,t}, {s,t}","matches":"2 rules applied in order in every step (Drift, NoStay); each one matches on the state the previous one produced","choice":"each rule draws its directions independently; all walkers rewritten at once by every rule","invariants":"number of walkers, one anchoring edge per walker, the space graph","physics":"2 hops per step in total; drifts and diffusions add up: D = (0.52, 0.4), drift v = (0.4, 0) for a = 1, tau = 1"}],"specs":[{"name":"Drift","notation":"{w,s}, {s,t} -> {w,t}, {s,t}","lhs":[["w","s"],["s","t"]],"rhs":[["w","t"],["s","t"]],"weights":[0.55,0.15,0.15,0.15],"self_loops":"allow","types":{"w":"walker","s":"site","t":"site"}},{"name":"NoStay","notation":"{w,s}, {s,t} -> {w,t}, {s,t}","lhs":[["w","s"],["s","t"]],"rhs":[["w","t"],["s","t"]],"weights":[0.25,0.25,0.25,0.25],"self_loops":"forbid","types":{"w":"walker","s":"site","t":"site"}}],"universe":{"size":9,"walls":"reflecting","placement":"left","sites":[16,26,29,29,7,3],"walkers":6,"steps":60,"seed":1,"spacing":1.0,"step_time":1.0},"demo":{"times":[0.0,1.0,2.0,3.0,4.0,5.0,6.0,7.0,8.0,9.0,10.0,11.0,12.0,13.0,14.0,15.0,16.0,17.0,18.0,19.0,20.0,21.0,22.0,23.0,24.0,25.0,26.0,27.0,28.0,29.0,30.0,31.0,32.0,33.0,34.0,35.0,36.0,37.0,38.0,39.0,40.0,41.0,42.0,43.0,44.0,45.0,46.0,47.0,48.0,49.0,50.0,51.0,52.0,53.0,54.0,55.0,56.0,57.0,58.0,59.0,60.0],"anchors":[[16,26,29,29,7,3],[26,34,29,29,17,3],[34,44,31,29,35,1],[52,44,13,39,17,1],[52,52,15,47,35,1],[52,70,15,47,33,1],[60,52,17,55,43,9],[60,60,7,73,35,27],[60,70,7,72,35,27],[58,70,17,63,53,37],[50,78,25,63,35,37],[58,77,33,73,35,27],[50,76,33,72,35,45],[58,77,51,72,35,45],[58,67,59,63,35,36],[68,77,77,73,43,54],[58,76,69,55,35,36],[66,75,61,55,34,36],[66,65,71,57,52,28],[66,65,71,59,52,36],[74,57,71,61,42,54],[75,67,80,43,42,72],[74,67,71,41,50,63],[73,77,71,49,50,63],[65,69,71,59,60,64],[47,69,79,51,60,74],[47,69,71,59,70,66],[47,69,79,77,78,66],[57,69,79,76,69,68],[75,77,70,75,79,68],[74,68,78,65,78,78],[65,78,79,47,69,68],[65,80,80,47,61,76],[73,62,71,37,69,75],[55,62,70,55,79,66],[65,62,60,57,69,76],[75,70,70,67,77,67],[74,80,80,57,67,67],[75,78,71,67,75,77],[74,76,79,59,75,77],[72,76,69,77,66,76],[63,77,77,76,74,66],[73,59,68,75,75,76],[72,69,60,76,57,75],[63,77,60,77,49,66],[73,75,60,75,59,68],[65,74,60,76,49,78],[75,65,70,77,49,70],[74,55,78,78,49,80],[72,63,68,78,41,71],[64,63,58,77,59,71],[72,73,48,78,51,79],[73,64,56,69,61,78],[64,46,74,79,51,78],[72,54,64,80,51,69],[73,54,72,71,51,77],[64,54,63,79,61,79],[74,63,65,77,69,71],[75,55,57,75,77,79],[76,47,65,66,76,79],[77,57,73,76,74,77]],"paths":[[[16,17,26],[26,35,34],[29,38,29],[29,38,29],[7,8,17],[3,12,3]],[[26,35,34],[34,43,44],[29,30,31],[29,38,29],[17,26,35],[3,2,1]],[[34,43,52],[44,53,44],[31,22,13],[29,30,39],[35,26,17],[1,0,1]],[[52,43,52],[44,53,52],[13,14,15],[39,48,47],[17,26,35],[1,2,1]],[[52,61,52],[52,61,70],[15,14,15],[47,46,47],[35,34,33],[1,10,1]],[[52,61,60],[70,61,52],[15,16,17],[47,46,55],[33,42,43],[1,10,9]],[[60,61,60],[52,51,60],[17,8,7],[55,64,73],[43,44,35],[9,18,27]],[[60,51,60],[60,69,70],[7,16,7],[73,73,72],[35,44,35],[27,36,27]],[[60,59,58],[70,61,70],[7,8,17],[72,72,63],[35,44,53],[27,36,37]],[[58,49,50],[70,79,78],[17,26,25],[63,72,63],[53,44,35],[37,46,37]],[[50,59,58],[78,78,77],[25,34,33],[63,72,73],[35,44,35],[37,28,27]],[[58,49,50],[77,77,76],[33,42,33],[73,73,72],[35,44,35],[27,36,45]],[[50,49,58],[76,76,77],[33,42,51],[72,73,72],[35,44,35],[45,46,45]],[[58,49,58],[77,68,67],[51,60,59],[72,72,63],[35,44,35],[45,45,36]],[[58,67,68],[67,76,77],[59,68,77],[63,72,73],[35,34,43],[36,45,54]],[[68,67,58],[77,77,76],[77,78,69],[73,64,55],[43,44,35],[54,45,36]],[[58,67,66],[76,76,75],[69,60,61],[55,64,55],[35,35,34],[36,27,36]],[[66,75,66],[75,74,65],[61,70,71],[55,56,57],[34,43,52],[36,27,28]],[[66,75,66],[65,74,65],[71,80,71],[57,58,59],[52,61,52],[28,37,36]],[[66,65,74],[65,66,57],[71,62,71],[59,60,61],[52,51,42],[36,45,54]],[[74,74,75],[57,66,67],[71,71,80],[61,52,43],[42,33,42],[54,63,72]],[[75,75,74],[67,76,67],[80,80,71],[43,42,41],[42,51,50],[72,72,63]],[[74,74,73],[67,76,77],[71,80,71],[41,40,49],[50,59,50],[63,72,63]],[[73,64,65],[77,68,69],[71,80,71],[49,50,59],[50,51,60],[63,63,64]],[[65,56,47],[69,68,69],[71,80,79],[59,60,51],[60,69,60],[64,73,74]],[[47,46,47],[69,78,69],[79,80,71],[51,60,59],[60,69,70],[74,65,66]],[[47,56,47],[69,78,69],[71,80,79],[59,68,77],[70,69,78],[66,75,66]],[[47,56,57],[69,60,69],[79,80,79],[77,77,76],[78,78,69],[66,67,68]],[[57,66,75],[69,78,77],[79,79,70],[76,76,75],[69,78,79],[68,77,68]],[[75,75,74],[77,77,68],[70,79,78],[75,66,65],[79,79,78],[68,77,78]],[[74,74,65],[68,77,78],[78,78,79],[65,56,47],[78,78,69],[78,69,68]],[[65,56,65],[78,79,80],[79,79,80],[47,46,47],[69,70,61],[68,67,76]],[[65,74,73],[80,71,62],[80,80,71],[47,46,37],[61,70,69],[76,76,75]],[[73,64,55],[62,71,62],[71,71,70],[37,46,55],[69,78,79],[75,75,66]],[[55,64,65],[62,71,62],[70,69,60],[55,56,57],[79,78,69],[66,75,76]],[[65,74,75],[62,71,70],[60,69,70],[57,66,67],[69,78,77],[76,76,67]],[[75,75,74],[70,79,80],[70,79,80],[67,58,57],[77,68,67],[67,76,67]],[[74,74,75],[80,79,78],[80,80,71],[57,58,67],[67,76,75],[67,76,77]],[[75,75,74],[78,77,76],[71,80,79],[67,68,59],[75,74,75],[77,78,77]],[[74,73,72],[76,75,76],[79,78,69],[59,68,77],[75,75,66],[77,77,76]],[[72,72,63],[76,76,77],[69,78,77],[77,77,76],[66,75,74],[76,75,66]],[[63,64,73],[77,68,59],[77,77,68],[76,76,75],[74,74,75],[66,67,76]],[[73,73,72],[59,68,69],[68,69,60],[75,75,76],[75,66,57],[76,76,75]],[[72,72,63],[69,78,77],[60,69,60],[76,76,77],[57,48,49],[75,75,66]],[[63,72,73],[77,76,75],[60,59,60],[77,76,75],[49,58,59],[66,67,68]],[[73,74,65],[75,75,74],[60,69,60],[75,75,76],[59,58,49],[68,69,78]],[[65,74,75],[74,74,65],[60,69,70],[76,76,77],[49,58,49],[78,79,70]],[[75,75,74],[65,64,55],[70,79,78],[77,77,78],[49,48,49],[70,79,80]],[[74,73,72],[55,54,63],[78,69,68],[78,77,78],[49,50,41],[80,80,71]],[[72,73,64],[63,72,63],[68,59,58],[78,78,77],[41,50,59],[71,80,71]],[[64,73,72],[63,72,73],[58,49,48],[77,77,78],[59,50,51],[71,70,79]],[[72,72,73],[73,73,64],[48,47,56],[78,78,69],[51,60,61],[79,79,78]],[[73,73,64],[64,55,46],[56,65,74],[69,78,79],[61,52,51],[78,79,78]],[[64,73,72],[46,55,54],[74,65,64],[79,79,80],[51,60,51],[78,78,69]],[[72,72,73],[54,55,54],[64,73,72],[80,80,71],[51,52,51],[69,78,77]],[[73,73,64],[54,63,54],[72,72,63],[71,80,79],[51,60,61],[77,78,79]],[[64,73,74],[54,54,63],[63,64,65],[79,78,77],[61,70,69],[79,80,71]],[[74,74,75],[63,64,55],[65,66,57],[77,76,75],[69,78,77],[71,70,79]],[[75,75,76],[55,56,47],[57,66,65],[75,75,66],[77,77,76],[79,78,79]],[[76,76,77],[47,56,57],[65,74,73],[66,75,76],[76,75,74],[79,78,77]]],"space":{"coordinates":[[0.0,0.0],[0.0,1.0],[0.0,2.0],[0.0,3.0],[0.0,4.0],[0.0,5.0],[0.0,6.0],[0.0,7.0],[0.0,8.0],[1.0,0.0],[1.0,1.0],[1.0,2.0],[1.0,3.0],[1.0,4.0],[1.0,5.0],[1.0,6.0],[1.0,7.0],[1.0,8.0],[2.0,0.0],[2.0,1.0],[2.0,2.0],[2.0,3.0],[2.0,4.0],[2.0,5.0],[2.0,6.0],[2.0,7.0],[2.0,8.0],[3.0,0.0],[3.0,1.0],[3.0,2.0],[3.0,3.0],[3.0,4.0],[3.0,5.0],[3.0,6.0],[3.0,7.0],[3.0,8.0],[4.0,0.0],[4.0,1.0],[4.0,2.0],[4.0,3.0],[4.0,4.0],[4.0,5.0],[4.0,6.0],[4.0,7.0],[4.0,8.0],[5.0,0.0],[5.0,1.0],[5.0,2.0],[5.0,3.0],[5.0,4.0],[5.0,5.0],[5.0,6.0],[5.0,7.0],[5.0,8.0],[6.0,0.0],[6.0,1.0],[6.0,2.0],[6.0,3.0],[6.0,4.0],[6.0,5.0],[6.0,6.0],[6.0,7.0],[6.0,8.0],[7.0,0.0],[7.0,1.0],[7.0,2.0],[7.0,3.0],[7.0,4.0],[7.0,5.0],[7.0,6.0],[7.0,7.0],[7.0,8.0],[8.0,0.0],[8.0,1.0],[8.0,2.0],[8.0,3.0],[8.0,4.0],[8.0,5.0],[8.0,6.0],[8.0,7.0],[8.0,8.0]],"edges":[[0,9],[0,1],[1,10],[1,2],[2,11],[2,3],[3,12],[3,4],[4,13],[4,5],[5,14],[5,6],[6,15],[6,7],[7,16],[7,8],[8,17],[9,18],[9,10],[10,19],[10,11],[11,20],[11,12],[12,21],[12,13],[13,22],[13,14],[14,23],[14,15],[15,24],[15,16],[16,25],[16,17],[17,26],[18,27],[18,19],[19,28],[19,20],[20,29],[20,21],[21,30],[21,22],[22,31],[22,23],[23,32],[23,24],[24,33],[24,25],[25,34],[25,26],[26,35],[27,36],[27,28],[28,37],[28,29],[29,38],[29,30],[30,39],[30,31],[31,40],[31,32],[32,41],[32,33],[33,42],[33,34],[34,43],[34,35],[35,44],[36,45],[36,37],[37,46],[37,38],[38,47],[38,39],[39,48],[39,40],[40,49],[40,41],[41,50],[41,42],[42,51],[42,43],[43,52],[43,44],[44,53],[45,54],[45,46],[46,55],[46,47],[47,56],[47,48],[48,57],[48,49],[49,58],[49,50],[50,59],[50,51],[51,60],[51,52],[52,61],[52,53],[53,62],[54,63],[54,55],[55,64],[55,56],[56,65],[56,57],[57,66],[57,58],[58,67],[58,59],[59,68],[59,60],[60,69],[60,61],[61,70],[61,62],[62,71],[63,72],[63,64],[64,73],[64,65],[65,74],[65,66],[66,75],[66,67],[67,76],[67,68],[68,77],[68,69],[69,78],[69,70],[70,79],[70,71],[71,80],[72,73],[73,74],[74,75],[75,76],[76,77],[77,78],[78,79],[79,80]],"box":{"lower":[-0.5,-0.5],"upper":[8.5,8.5]},"spacing":1.0,"neighbors":[[9,0,1,0],[10,1,2,0],[11,2,3,1],[12,3,4,2],[13,4,5,3],[14,5,6,4],[15,6,7,5],[16,7,8,6],[17,8,8,7],[18,0,10,9],[19,1,11,9],[20,2,12,10],[21,3,13,11],[22,4,14,12],[23,5,15,13],[24,6,16,14],[25,7,17,15],[26,8,17,16],[27,9,19,18],[28,10,20,18],[29,11,21,19],[30,12,22,20],[31,13,23,21],[32,14,24,22],[33,15,25,23],[34,16,26,24],[35,17,26,25],[36,18,28,27],[37,19,29,27],[38,20,30,28],[39,21,31,29],[40,22,32,30],[41,23,33,31],[42,24,34,32],[43,25,35,33],[44,26,35,34],[45,27,37,36],[46,28,38,36],[47,29,39,37],[48,30,40,38],[49,31,41,39],[50,32,42,40],[51,33,43,41],[52,34,44,42],[53,35,44,43],[54,36,46,45],[55,37,47,45],[56,38,48,46],[57,39,49,47],[58,40,50,48],[59,41,51,49],[60,42,52,50],[61,43,53,51],[62,44,53,52],[63,45,55,54],[64,46,56,54],[65,47,57,55],[66,48,58,56],[67,49,59,57],[68,50,60,58],[69,51,61,59],[70,52,62,60],[71,53,62,61],[72,54,64,63],[73,55,65,63],[74,56,66,64],[75,57,67,65],[76,58,68,66],[77,59,69,67],[78,60,70,68],[79,61,71,69],[80,62,71,70],[72,63,73,72],[73,64,74,72],[74,65,75,73],[75,66,76,74],[76,67,77,75],[77,68,78,76],[78,69,79,77],[79,70,80,78],[80,71,80,79]]}},"measured":{"mean_squared_step":1.7055555555555557,"diffusion":0.2125,"drift":[0.10277777777777779,-0.025],"wall_rate":0.20555555555555555,"occupied_final":5},"predicted":{"diffusion":[0.52,0.4],"drift":[0.4,0.0],"hops":2}}</script>
+<script>
+// imigraph visualisation helpers: canvas drawing of trajectories and graph states, plus a
+// frame player. Inlined into the generated HTML report and served to the Pyodide GUI.
+(function (global) {
+  "use strict";
+
+  const COLORS = {
+    reference: "#2563eb",
+    candidate: "#dc2626",
+    space: "#9ca3af",
+    edge: "#d1d5db",
+    walker: "#dc2626",
+    walkerEdge: "#f87171",
+    box: "#374151",
+  };
+
+  // Maps box coordinates to canvas pixels (y grows upward in the box, downward on canvas).
+  function Viewport(canvas, box, margin) {
+    margin = margin === undefined ? 10 : margin;
+    const ctx = canvas.getContext("2d");
+    const span = [box.upper[0] - box.lower[0], box.upper[1] - box.lower[1]];
+    const scale = Math.min(
+      (canvas.width - 2 * margin) / span[0],
+      (canvas.height - 2 * margin) / span[1]
+    );
+    const offset = [
+      (canvas.width - scale * span[0]) / 2,
+      (canvas.height - scale * span[1]) / 2,
+    ];
+    return {
+      ctx: ctx,
+      scale: scale,
+      x: function (v) { return offset[0] + (v - box.lower[0]) * scale; },
+      y: function (v) { return canvas.height - offset[1] - (v - box.lower[1]) * scale; },
+      // Inverse maps (canvas pixels to box coordinates), for clicks on the canvas.
+      invX: function (px) { return box.lower[0] + (px - offset[0]) / scale; },
+      invY: function (py) { return box.lower[1] + (canvas.height - offset[1] - py) / scale; },
+      // Box coordinates of a mouse event on this canvas (CSS size may differ from the pixel size).
+      pointOf: function (event) {
+        const rect = canvas.getBoundingClientRect();
+        const px = (event.clientX - rect.left) * canvas.width / rect.width;
+        const py = (event.clientY - rect.top) * canvas.height / rect.height;
+        return [box.lower[0] + (px - offset[0]) / scale, box.lower[1] + (canvas.height - offset[1] - py) / scale];
+      },
+      clear: function () {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.strokeStyle = COLORS.box;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(offset[0], offset[1], scale * span[0], scale * span[1]);
+      },
+    };
+  }
+
+  function drawParticles(vp, positions, color, radius) {
+    const ctx = vp.ctx;
+    ctx.fillStyle = color;
+    for (let i = 0; i < positions.length; i++) {
+      ctx.beginPath();
+      ctx.arc(vp.x(positions[i][0]), vp.y(positions[i][1]), radius, 0, 2 * Math.PI);
+      ctx.fill();
+    }
+  }
+
+  // `maxLength` (box units, optional) hides the wrap-around edges of a periodic lattice.
+  function drawSpace(vp, coordinates, edges, nodeRadius, maxLength) {
+    const ctx = vp.ctx;
+    ctx.strokeStyle = COLORS.edge;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let e = 0; e < edges.length; e++) {
+      const a = coordinates[edges[e][0]];
+      const b = coordinates[edges[e][1]];
+      if (maxLength && Math.hypot(a[0] - b[0], a[1] - b[1]) > maxLength) continue;
+      ctx.moveTo(vp.x(a[0]), vp.y(a[1]));
+      ctx.lineTo(vp.x(b[0]), vp.y(b[1]));
+    }
+    ctx.stroke();
+    drawParticles(vp, coordinates, COLORS.space, nodeRadius);
+  }
+
+  // Lattice-gas walkers: an arrow from the site in the walker's direction (its heading edge).
+  function drawArrows(vp, coordinates, sites, directions, spacing, color) {
+    const ctx = vp.ctx;
+    const len = 0.42 * spacing;
+    const head = Math.max(4, 0.12 * spacing * vp.scale);
+    ctx.strokeStyle = color || COLORS.walker;
+    ctx.fillStyle = color || COLORS.walker;
+    ctx.lineWidth = 2;
+    for (let w = 0; w < sites.length; w++) {
+      const a = coordinates[sites[w]];
+      const d = LOOP_DIRECTIONS[directions[w]];
+      const x0 = vp.x(a[0]), y0 = vp.y(a[1]);
+      const x1 = vp.x(a[0] + len * d[0]), y1 = vp.y(a[1] + len * d[1]);
+      ctx.beginPath();
+      ctx.moveTo(x0, y0);
+      ctx.lineTo(x1, y1);
+      ctx.stroke();
+      const angle = Math.atan2(y1 - y0, x1 - x0);
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x1 - head * Math.cos(angle - 0.5), y1 - head * Math.sin(angle - 0.5));
+      ctx.lineTo(x1 - head * Math.cos(angle + 0.5), y1 - head * Math.sin(angle + 0.5));
+      ctx.closePath();
+      ctx.fill();
+    }
+  }
+
+  // Rings around the sites where a Collide rule fired in this step.
+  function drawCollisionMarks(vp, coordinates, sites, spacing) {
+    const ctx = vp.ctx;
+    ctx.strokeStyle = "#f59e0b";
+    ctx.lineWidth = 3;
+    for (let i = 0; i < sites.length; i++) {
+      const a = coordinates[sites[i]];
+      ctx.beginPath();
+      ctx.arc(vp.x(a[0]), vp.y(a[1]), 0.3 * spacing * vp.scale, 0, 2 * Math.PI);
+      ctx.stroke();
+    }
+  }
+
+  // Walker nodes are drawn next to their anchor node, joined by their edge; several walkers on
+  // one node fan out around it.
+  function drawWalkers(vp, coordinates, anchors, spacing) {
+    const ctx = vp.ctx;
+    const seen = {};
+    const r = 0.32 * spacing;
+    for (let w = 0; w < anchors.length; w++) {
+      const node = anchors[w];
+      const k = seen[node] || 0;
+      seen[node] = k + 1;
+      const angle = Math.PI / 4 + k * (2 * Math.PI / 5);
+      const a = coordinates[node];
+      const px = vp.x(a[0] + r * Math.cos(angle));
+      const py = vp.y(a[1] + r * Math.sin(angle));
+      ctx.strokeStyle = COLORS.walkerEdge;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(vp.x(a[0]), vp.y(a[1]));
+      ctx.lineTo(px, py);
+      ctx.stroke();
+      ctx.fillStyle = COLORS.walker;
+      ctx.beginPath();
+      ctx.arc(px, py, Math.max(3, 0.14 * spacing * vp.scale), 0, 2 * Math.PI);
+      ctx.fill();
+    }
+  }
+
+  // Neighbour-table order of SquareLattice: +x, -x, +y, -y. A self-loop replaces a missing
+  // neighbour and is drawn as a small loop pointing out of the lattice in that direction.
+  const LOOP_DIRECTIONS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+
+  // Draws the edge from site `from` to site `to` (a loop drawn beside the site when equal).
+  function strokeEdge(vp, coords, neighbors, spacing, from, to, color, width) {
+    const ctx = vp.ctx;
+    const s = coords[from];
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.beginPath();
+    if (from === to) {
+      const k = Math.max(0, neighbors[from].indexOf(from));
+      const d = LOOP_DIRECTIONS[k];
+      ctx.arc(vp.x(s[0] + 0.28 * spacing * d[0]), vp.y(s[1] + 0.28 * spacing * d[1]),
+              0.18 * spacing * vp.scale, 0, 2 * Math.PI);
+    } else {
+      const t = coords[to];
+      ctx.moveTo(vp.x(s[0]), vp.y(s[1]));
+      ctx.lineTo(vp.x(t[0]), vp.y(t[1]));
+    }
+    ctx.stroke();
+  }
+
+  // One application of a chain rule on a small space, in four phases: 0 state, 1 match (every
+  // labelled edge at the anchor is a candidate for the first chain edge, yellow), 2 choose (the
+  // matched chain, orange), 3 rewrite (the walker edge now ends at the chain's target site).
+  // `path` is the matched chain [s0, s1, ..., sk]; `target` the walker's new site.
+  // `space` needs coordinates, edges, neighbors, spacing.
+  function drawRuleStep(vp, space, path, target, phase) {
+    const coords = space.coordinates;
+    const spacing = space.spacing;
+    const nbrs = space.neighbors;
+    drawSpace(vp, coords, space.edges, Math.max(4, 0.1 * spacing * vp.scale), 1.5 * spacing);
+    const anchor = path[0];
+    if (phase === 1) {
+      for (let k = 0; k < nbrs[anchor].length; k++) {
+        strokeEdge(vp, coords, nbrs, spacing, anchor, nbrs[anchor][k], "#fbbf24", 4);
+        if (nbrs[anchor][k] === anchor) {  // loops: draw at their own direction
+          const d = LOOP_DIRECTIONS[k], s = coords[anchor], ctx = vp.ctx;
+          ctx.beginPath();
+          ctx.arc(vp.x(s[0] + 0.28 * spacing * d[0]), vp.y(s[1] + 0.28 * spacing * d[1]),
+                  0.18 * spacing * vp.scale, 0, 2 * Math.PI);
+          ctx.stroke();
+        }
+      }
+    } else if (phase === 2) {
+      for (let i = 1; i < path.length; i++) {
+        strokeEdge(vp, coords, nbrs, spacing, path[i - 1], path[i], "#f59e0b", 5);
+      }
+    }
+    drawWalkers(vp, coords, [phase === 3 ? target : anchor], spacing);
+  }
+
+  const RULE_PHASES = [
+    "state: walker w (red) is anchored at space node s by one edge",
+    "match: every labelled edge at s is a candidate for the first chain edge (yellow); a self-loop counts",
+    "choose: the chain is drawn with the rule's direction weights (orange)",
+    "rewrite: {w,s} is replaced by the walker edge to the chain's target site; the space edges stay",
+  ];
+
+  // Plays frames 0..count-1, calling draw(frame) and keeping slider/label in sync.
+  function Player(count, draw, controls) {
+    let frame = 0;
+    let timer = null;
+    let interval = controls.interval || 80;
+    function show(f) {
+      frame = ((f % count) + count) % count;
+      if (controls.slider) controls.slider.value = frame;
+      if (controls.label) controls.label.textContent = controls.labelFor ? controls.labelFor(frame) : String(frame);
+      draw(frame);
+    }
+    function play() {
+      if (timer) return;
+      timer = setInterval(function () { show(frame + 1); }, interval);
+      if (controls.button) controls.button.textContent = "Pause";
+    }
+    function pause() {
+      if (timer) clearInterval(timer);
+      timer = null;
+      if (controls.button) controls.button.textContent = "Play";
+    }
+    // Playback speed: `factor` scales the player's own interval (1 = as authored, 2 = twice as fast).
+    function setSpeed(factor) {
+      interval = Math.max(10, (controls.interval || 80) / factor);
+      if (timer) { pause(); play(); }
+    }
+    if (controls.slider) {
+      controls.slider.min = 0;
+      controls.slider.max = count - 1;
+      controls.slider.addEventListener("input", function () { pause(); show(Number(controls.slider.value)); });
+    }
+    if (controls.button) {
+      controls.button.addEventListener("click", function () { if (timer) pause(); else play(); });
+    }
+    show(0);
+    return { play: play, pause: pause, show: show, setSpeed: setSpeed };
+  }
+
+  // Wires a range input (value = speed factor) to a list of players.
+  function speedControl(input, label, players) {
+    function apply() {
+      const factor = Number(input.value);
+      if (label) label.textContent = factor + "x";
+      players.forEach(function (p) { p.setSpeed(factor); });
+    }
+    input.addEventListener("input", apply);
+    apply();
+  }
+
+  global.imigraphViz = {
+    COLORS: COLORS,
+    LOOP_DIRECTIONS: LOOP_DIRECTIONS,
+    Viewport: Viewport,
+    drawParticles: drawParticles,
+    drawSpace: drawSpace,
+    drawWalkers: drawWalkers,
+    drawArrows: drawArrows,
+    drawCollisionMarks: drawCollisionMarks,
+    drawRuleStep: drawRuleStep,
+    RULE_PHASES: RULE_PHASES,
+    Player: Player,
+    speedControl: speedControl,
+  };
+})(typeof window !== "undefined" ? window : globalThis);
+
+</script>
+<script>
+(function () {
+  const data = JSON.parse(document.getElementById("data").textContent);
+  const V = window.imigraphViz;
+  const byId = function (id) { return document.getElementById(id); };
+  const demo = data.demo;
+  const players = [];
+
+  const universe = V.Viewport(byId("universe-canvas"), demo.space.box, 24);
+  universe.clear();
+  V.drawSpace(universe, demo.space.coordinates, demo.space.edges, 4, 1.5 * demo.space.spacing);
+  V.drawWalkers(universe, demo.space.coordinates, demo.anchors[0], demo.space.spacing);
+
+  const rule = V.Viewport(byId("rule-canvas"), demo.space.box, 30);
+  const steps = demo.times.length - 1;
+  players.push(V.Player(steps * 4, function (f) {
+    const step = Math.floor(f / 4), phase = f % 4;
+    rule.clear();
+    V.drawRuleStep(rule, demo.space, demo.paths[step][0], demo.anchors[step + 1][0], phase);
+    byId("rule-phase").textContent = V.RULE_PHASES[phase];
+  }, { slider: byId("rule-slider"), button: byId("rule-play"), label: byId("rule-label"),
+       labelFor: function (f) { return "step " + Math.floor(f / 4) + "." + (f % 4); }, interval: 700 }));
+
+  const world = V.Viewport(byId("demo-canvas"), demo.space.box, 24);
+  players.push(V.Player(demo.times.length, function (f) {
+    world.clear();
+    V.drawSpace(world, demo.space.coordinates, demo.space.edges, 4, 1.5 * demo.space.spacing);
+    V.drawWalkers(world, demo.space.coordinates, demo.anchors[f], demo.space.spacing);
+  }, { slider: byId("demo-slider"), button: byId("demo-play"), label: byId("demo-label"),
+       labelFor: function (f) { return "step " + f; }, interval: 500 }));
+  V.speedControl(byId("speed"), byId("speed-label"), players);
+})();
+</script>
+</body>
+</html>
